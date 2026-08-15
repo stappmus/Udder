@@ -1,0 +1,61 @@
+#!/bin/bash
+
+set -euo pipefail
+
+default_api_socket="${UDDER_DEFAULT_SOCKET_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/herdr/herdr.sock}"
+api_socket="${HERDR_SOCKET_PATH:-$default_api_socket}"
+proc_unix="${UDDER_PROC_NET_UNIX:-/proc/net/unix}"
+
+client_socket_for() {
+  local socket_path="$1"
+  if [[ $socket_path == *.sock ]]; then
+    printf '%s-client.sock\n' "${socket_path%.sock}"
+  else
+    printf '%s-client\n' "$socket_path"
+  fi
+}
+
+client_attached() {
+  local client_socket
+  client_socket=$(client_socket_for "$api_socket")
+  local state path
+  while read -r _ _ _ _ _ state _ path; do
+    if [[ $state == 03 && ${path:-} == "$client_socket" ]]; then
+      return 0
+    fi
+  done <"$proc_unix"
+  return 1
+}
+
+case "${1:-}" in
+--client-attached)
+  if client_attached; then
+    printf 'true\n'
+  else
+    printf 'false\n'
+  fi
+  exit 0
+  ;;
+esac
+
+# Udder intentionally watches only the default local session. Herdr plugins are
+# global, so this guard prevents a named or remote session from creating an
+# alert whose click would attach to a different server.
+[[ $api_socket == "$default_api_socket" ]] || exit 0
+
+# A connected terminal client already presents Herdr's own agent state. Do no
+# IPC and no notification work while it is attached.
+client_attached && exit 0
+
+event_json="${HERDR_PLUGIN_EVENT_JSON:-}"
+[[ -n $event_json ]] || exit 0
+context_json="${HERDR_PLUGIN_CONTEXT_JSON:-}"
+[[ -n $context_json ]] || context_json='{}'
+
+omarchy_shell="${UDDER_OMARCHY_SHELL:-omarchy-shell}"
+command -v "$omarchy_shell" >/dev/null 2>&1 || exit 0
+
+# Quickshell owns deduplication, durable pending state, and the clickable
+# desktop notification. A missing/reloading shell is deliberately non-fatal to
+# Herdr's event hook.
+"$omarchy_shell" stappmus.udder event "$event_json" "$context_json" >/dev/null 2>&1 || true

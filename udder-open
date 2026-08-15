@@ -1,0 +1,101 @@
+#!/bin/bash
+
+set -euo pipefail
+
+proc_root="${UDDER_PROC_ROOT:-/proc}"
+hyprctl_bin="${UDDER_HYPRCTL_BIN:-hyprctl}"
+jq_bin="${UDDER_JQ_BIN:-jq}"
+pgrep_bin="${UDDER_PGREP_BIN:-pgrep}"
+omarchy_bin="${UDDER_OMARCHY_BIN:-omarchy}"
+dry_run=false
+
+if [[ ${1:-} == --dry-run ]]; then
+  dry_run=true
+fi
+
+read_ppid() {
+  local pid="$1" key value rest
+  [[ -r $proc_root/$pid/status ]] || return 1
+  while read -r key value rest; do
+    if [[ $key == PPid: ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done <"$proc_root/$pid/status"
+  return 1
+}
+
+is_default_local_client() {
+  local pid="$1"
+  local -a argv=()
+  [[ -r $proc_root/$pid/cmdline ]] || return 1
+  mapfile -d '' -t argv <"$proc_root/$pid/cmdline"
+  ((${#argv[@]} == 1)) || return 1
+  [[ ${argv[0]##*/} == herdr ]]
+}
+
+window_owns_process() {
+  local window_pid="$1" process_pid="$2" current="$2" parent depth
+  for ((depth = 0; depth < 64; depth++)); do
+    [[ $current == "$window_pid" ]] && return 0
+    [[ $current =~ ^[0-9]+$ && $current -gt 1 ]] || return 1
+    parent=$(read_ppid "$current") || return 1
+    [[ $parent != "$current" ]] || return 1
+    current="$parent"
+  done
+  return 1
+}
+
+declare -a local_clients=()
+while read -r pid; do
+  [[ $pid =~ ^[0-9]+$ ]] || continue
+  if is_default_local_client "$pid"; then
+    local_clients+=("$pid")
+  fi
+done < <("$pgrep_bin" -x herdr 2>/dev/null || true)
+
+if ((${#local_clients[@]} > 0)); then
+  clients_json=$($hyprctl_bin clients -j 2>/dev/null || printf '[]')
+  while IFS=$'\t' read -r address workspace window_pid; do
+    [[ $address =~ ^0x[0-9a-fA-F]+$ && -n $workspace && $window_pid =~ ^[0-9]+$ ]] || continue
+    for client_pid in "${local_clients[@]}"; do
+      if window_owns_process "$window_pid" "$client_pid"; then
+        if $dry_run; then
+          printf 'focus\t%s\t%s\t%s\t%s\n' "$address" "$workspace" "$window_pid" "$client_pid"
+          exit 0
+        fi
+        if "$hyprctl_bin" dispatch \
+          "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null 2>&1; then
+          exit 0
+        fi
+        # Hyprland before 0.56 used the legacy text dispatcher syntax.
+        "$hyprctl_bin" dispatch focuswindow "address:$address" >/dev/null
+        exit 0
+      fi
+    done
+  done < <(
+    "$jq_bin" -r '
+      sort_by(.focusHistoryID // 2147483647)
+      | .[]
+      | select(.mapped == true)
+      | [
+          (.address // ""),
+          (.workspace.name // (.workspace.id | tostring) // ""),
+          (.pid | tostring)
+        ]
+      | @tsv
+    ' <<<"$clients_json" 2>/dev/null || true
+  )
+
+  if $dry_run; then
+    printf 'unmapped-local-client\t%s\n' "${local_clients[0]}"
+  fi
+  exit 1
+fi
+
+if $dry_run; then
+  printf 'launch\n'
+  exit 0
+fi
+
+exec "$omarchy_bin" launch terminal herdr

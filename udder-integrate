@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly plugin_id="stappmus.udder"
+plugin_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+readonly plugin_root
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+mkdir -p -- "$state_dir"
+
+exec 9>"$state_dir/udder-integration.lock"
+flock 9
+
+herdr_bin="${HERDR_BIN_PATH:-herdr}"
+
+emit() {
+  local state="$1"
+  local message="${2:-}"
+  jq -cn --arg state "$state" --arg message "$message" '{state: $state, message: $message}'
+}
+
+if ! command -v "$herdr_bin" >/dev/null 2>&1; then
+  emit error "Herdr is not installed, so completion notifications are unavailable."
+  exit 1
+fi
+
+if ! listing=$("$herdr_bin" plugin list --plugin "$plugin_id" --json 2>/dev/null); then
+  emit error "Could not inspect Herdr's plugin registry."
+  exit 1
+fi
+
+count=$(jq -r '.result.plugins | length' <<<"$listing")
+
+if [[ ${1:-} == --unlink ]]; then
+  if ((count == 0)); then
+    emit ready "Udder was already unlinked from Herdr."
+    exit 0
+  fi
+  registered_root=$(jq -r '.result.plugins[0].plugin_root // ""' <<<"$listing")
+  if [[ $registered_root != "$plugin_root" ]]; then
+    emit conflict "Refusing to unlink a different stappmus.udder checkout: $registered_root"
+    exit 1
+  fi
+  "$herdr_bin" plugin unlink "$plugin_id" >/dev/null
+  emit ready "Udder was unlinked from Herdr."
+  exit 0
+fi
+
+if ((count == 0)); then
+  if ! link_error=$("$herdr_bin" plugin link "$plugin_root" --enabled 2>&1 >/dev/null); then
+    emit error "Could not register Udder with Herdr: $link_error"
+    exit 1
+  fi
+  emit ready "Herdr completion events are connected."
+  exit 0
+fi
+
+registered_root=$(jq -r '.result.plugins[0].plugin_root // ""' <<<"$listing")
+enabled=$(jq -r '.result.plugins[0].enabled // false' <<<"$listing")
+warning=$(jq -r '.result.plugins[0].warnings[0] // ""' <<<"$listing")
+
+if [[ $registered_root != "$plugin_root" ]]; then
+  emit conflict "Herdr already has stappmus.udder linked from $registered_root. Unlink it before using this checkout."
+  exit 1
+fi
+if [[ $enabled != true ]]; then
+  emit disabled "Udder's Herdr event bridge is disabled. Enable it with: herdr plugin enable stappmus.udder"
+  exit 0
+fi
+if [[ -n $warning ]]; then
+  emit error "Herdr loaded Udder with a warning: $warning"
+  exit 1
+fi
+
+emit ready "Herdr completion events are connected."

@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -u
+
+plugin_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+sound_path="$plugin_root/assets/herdr-done.mp3"
+
+if [[ ${1:-} == --print-path ]]; then
+  printf '%s\n' "$sound_path"
+  exit 0
+fi
+
+[[ -z ${HERDR_DISABLE_SOUND+x} ]] || exit 0
+[[ -f $sound_path ]] || exit 0
+
+play() {
+  timeout --signal=TERM --kill-after=1s 15s "$@" >/dev/null 2>&1
+}
+
+# Test and packaging escape hatch; regular users follow Herdr's Linux player
+# preference order below.
+if [[ -n ${UDDER_SOUND_PLAYER:-} ]]; then
+  play "$UDDER_SOUND_PLAYER" "$sound_path" || true
+  exit 0
+fi
+
+for player in paplay pw-play ffplay mpg123 mpv; do
+  command -v "$player" >/dev/null 2>&1 || continue
+  case "$player" in
+  ffplay)
+    play "$player" -nodisp -autoexit -loglevel quiet "$sound_path" && exit 0
+    ;;
+  mpg123)
+    play "$player" -q "$sound_path" && exit 0
+    ;;
+  mpv)
+    play "$player" --no-video --really-quiet "$sound_path" && exit 0
+    ;;
+  *)
+    play "$player" "$sound_path" && exit 0
+    ;;
+  esac
+done
+
+exit 0

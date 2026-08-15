@@ -1,0 +1,18 @@
+id = "stappmus.udder"
+name = "Udder event bridge"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Forwards low-volume Herdr agent lifecycle events to the Udder Omarchy widget."
+platforms = ["linux"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["./udder-event"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["./udder-event"]
+
+[[events]]
+on = "pane.closed"
+command = ["./udder-event"]
