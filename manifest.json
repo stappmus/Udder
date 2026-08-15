@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "stappmus",
   "license": "MIT",
-  "description": "A quiet Herdr agent overview that alerts only while the Herdr client is detached.",
+  "description": "See all your Herdr agents from the Omarchy bar, get notified when one finishes while you are away, and jump straight back to it.",
   "kinds": ["bar-widget"],
   "activation": "on-demand",
   "entryPoints": {
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Udder",
-    "description": "See every agent in the default Herdr session and get completion alerts while its terminal client is detached.",
+    "description": "See all your local Herdr agents, get notified when one finishes while Herdr is out of sight, and jump straight back to it.",
     "category": "Development",
     "aliases": ["udder", "herdr", "herdr-agents"],
     "allowMultiple": false,

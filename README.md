@@ -1,15 +1,15 @@
 # Udder
 
-Udder was made for the moment when you have several agents working in
-[Herdr](https://herdr.dev), but you do not want to spend the next ten minutes
-staring at a terminal.
+Udder adds a small cow to the Omarchy bar that shows every coding agent in your
+local [Herdr](https://herdr.dev) session. Open it to see who is working, idle,
+blocked, or finished. Click any agent and Udder takes you to that exact
+conversation in the Herdr terminal you already had open.
 
-The little cow in your Omarchy bar gives you a quiet place to check on the
-whole herd. Open it when you are curious, then go back to whatever else you
-were doing. If an agent finishes while Herdr is out of sight, Udder lets you
-know with the familiar Herdr sound. Click the agent and you are taken straight
-back to that conversation—on the right desktop, in the Herdr terminal you
-already had open.
+It was made for the time between sending several agents to work and coming
+back for their answers. You can leave Herdr, get on with something else, and
+still know when an agent finishes. Udder sends a desktop notification with
+Herdr's familiar completion sound; clicking it returns you to the finished
+agent on the right desktop.
 
 When Herdr is already in front of you, Udder stays out of the way. It is not a
 second Herdr; it is the small glance-and-return loop that makes leaving Herdr
