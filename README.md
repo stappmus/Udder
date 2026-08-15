@@ -15,7 +15,7 @@ When Herdr is already in front of you, Udder stays out of the way. It is not a
 second Herdr; it is the small glance-and-return loop that makes leaving Herdr
 feel safe.
 
-![Udder's Quickshell agent overview](docs/udder-overview.png)
+![Udder's Quickshell agent overview](preview.png)
 
 ## Everyday use
 
@@ -43,8 +43,14 @@ settings and link it manually:
 herdr plugin link ~/.config/omarchy/plugins/stappmus.udder --enabled
 ```
 
-Requirements: Linux, the current Omarchy shell plugin API, Herdr 0.7.0 or
-newer, and `jq`/`flock` (both part of a normal Omarchy installation).
+Requirements:
+
+- Omarchy Quattro with its current Quickshell plugin API and Hyprland.
+- Herdr 0.7.0 or newer.
+- `jq`, `flock`, `pgrep`, and `timeout`, all included in a normal Omarchy
+  installation.
+- For the optional completion chime: `pw-play`, `paplay`, `ffplay`, `mpg123`,
+  or `mpv`. Udder quietly skips sound if none is available.
 
 ## Controls
 
@@ -79,6 +85,8 @@ omarchy plugin remove stappmus.udder
 
 Udder stores pending completion state in
 `~/.local/state/omarchy/udder.json`.
+You may remove that file and `udder-integration.lock` after uninstalling; no
+other Udder process or service remains installed.
 
 Udder's source is MIT licensed. Its unmodified Herdr completion sound is
 Apache-2.0 licensed; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
