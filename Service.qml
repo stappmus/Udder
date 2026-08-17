@@ -91,7 +91,7 @@ Item {
   }
 
   function refresh() {
-    if (requestPending || apiSocket.connected) {
+    if (requestPending) {
       refreshQueued = true
       return
     }
@@ -101,18 +101,19 @@ Item {
     requestPending = true
     requestSerial++
     requestTimeout.restart()
-    apiSocket.connected = true
+    apiSocketLoader.active = false
+    apiSocketLoader.active = true
   }
 
-  function sendSnapshotRequest() {
-    if (!apiSocket.connected || !requestPending) return
+  function sendSnapshotRequest(socket) {
+    if (!socket || !requestPending) return
     var request = {
       id: "udder-snapshot-" + requestSerial,
       method: "session.snapshot",
       params: {}
     }
-    apiSocket.write(JSON.stringify(request) + "\n")
-    apiSocket.flush()
+    socket.write(JSON.stringify(request) + "\n")
+    socket.flush()
   }
 
   function handleSnapshotLine(line) {
@@ -121,7 +122,7 @@ Item {
     requestTimeout.stop()
     requestPending = false
     loading = false
-    apiSocket.connected = false
+    apiSocketLoader.active = false
 
     if (parsed.ok) {
       state = "ready"
@@ -146,7 +147,7 @@ Item {
     requestTimeout.stop()
     requestPending = false
     loading = false
-    apiSocket.connected = false
+    apiSocketLoader.active = false
     state = "offline"
     message = String(reason || "Herdr server is not running.")
     agents = []
@@ -177,7 +178,7 @@ Item {
 
   function openHerdr(paneId) {
     var target = String(paneId || "")
-    if (focusRequestPending || focusSocket.connected) return
+    if (focusRequestPending) return
     if (target === "") {
       launchTerminal()
       return
@@ -188,14 +189,15 @@ Item {
     focusTargetPaneId = target
     focusRequestPending = true
     focusRequestTimeout.restart()
-    focusSocket.connected = true
+    focusSocketLoader.active = false
+    focusSocketLoader.active = true
   }
 
-  function sendFocusRequest() {
-    if (!focusSocket.connected || !focusRequestPending) return
+  function sendFocusRequest(socket) {
+    if (!socket || !focusRequestPending) return
     var request = Model.paneFocusRequest(focusTargetPaneId, focusRequestId)
-    focusSocket.write(JSON.stringify(request) + "\n")
-    focusSocket.flush()
+    socket.write(JSON.stringify(request) + "\n")
+    socket.flush()
   }
 
   function handleFocusLine(line) {
@@ -212,7 +214,7 @@ Item {
     if (!focusRequestPending) return
     focusRequestTimeout.stop()
     focusRequestPending = false
-    focusSocket.connected = false
+    focusSocketLoader.active = false
     focusRequestId = ""
     focusTargetPaneId = ""
     if (String(reason || "") !== "") console.warn("udder: pane focus failed:", reason)
@@ -403,29 +405,43 @@ Item {
     ensureIntegration()
   }
 
-  Socket {
-    id: apiSocket
-    path: root.apiSocketPath
-    connected: false
-    onConnectionStateChanged: if (connected) root.sendSnapshotRequest()
-    onError: function(errorCode) { root.failRequest("Herdr server is not running.") }
+  Loader {
+    id: apiSocketLoader
+    active: false
 
-    parser: SplitParser {
-      splitMarker: "\n"
-      onRead: function(line) { root.handleSnapshotLine(line) }
+    sourceComponent: Component {
+      Socket {
+        id: apiSocket
+        path: root.apiSocketPath
+        connected: true
+        onConnectionStateChanged: if (connected) root.sendSnapshotRequest(apiSocket)
+        onError: function(errorCode) { root.failRequest("Herdr server is not running.") }
+
+        parser: SplitParser {
+          splitMarker: "\n"
+          onRead: function(line) { root.handleSnapshotLine(line) }
+        }
+      }
     }
   }
 
-  Socket {
-    id: focusSocket
-    path: root.apiSocketPath
-    connected: false
-    onConnectionStateChanged: if (connected) root.sendFocusRequest()
-    onError: function(errorCode) { root.finishFocusRequest("Herdr server is not running.") }
+  Loader {
+    id: focusSocketLoader
+    active: false
 
-    parser: SplitParser {
-      splitMarker: "\n"
-      onRead: function(line) { root.handleFocusLine(line) }
+    sourceComponent: Component {
+      Socket {
+        id: focusSocket
+        path: root.apiSocketPath
+        connected: true
+        onConnectionStateChanged: if (connected) root.sendFocusRequest(focusSocket)
+        onError: function(errorCode) { root.finishFocusRequest("Herdr server is not running.") }
+
+        parser: SplitParser {
+          splitMarker: "\n"
+          onRead: function(line) { root.handleFocusLine(line) }
+        }
+      }
     }
   }
 
