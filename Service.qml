@@ -42,6 +42,24 @@ Item {
     return count + revision * 0
   }
 
+  property var blockedByPane: ({})
+  property int blockedRevision: 0
+  readonly property int blockedCount: {
+    var revision = blockedRevision
+    var count = 0
+    for (var paneId in blockedByPane) count++
+    return count + revision * 0
+  }
+
+  property var workingByPane: ({})
+  property int workingRevision: 0
+  readonly property int workingCount: {
+    var revision = workingRevision
+    var count = 0
+    for (var paneId in workingByPane) count++
+    return count + revision * 0
+  }
+
   property string integrationState: "checking"
   property string integrationMessage: "Registering the Herdr event bridge…"
 
@@ -134,6 +152,8 @@ Item {
       serverVersion = parsed.version
       protocol = parsed.protocol
       lastUpdatedMs = Date.now()
+      replaceBlocked(Model.blockedFromAgents(parsed.agents))
+      replaceWorking(Model.workingFromAgents(parsed.agents))
       reconcilePending()
     } else {
       state = "error"
@@ -227,17 +247,18 @@ Item {
 
   function parseClientSockets(raw) {
     var attached = false
+    var serverPresent = false
     var lines = String(raw || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
       var fields = lines[i].trim().split(/\s+/)
       if (fields.length < 8) continue
       var path = fields.slice(7).join(" ")
-      if (fields[5] === "03" && path === clientSocketPath) {
-        attached = true
-        break
-      }
+      if (path === apiSocketPath) serverPresent = true
+      if (fields[5] === "03" && path === clientSocketPath) attached = true
     }
     applyClientAttached(attached)
+    if (serverPresent && state !== "ready" && !requestPending)
+      Qt.callLater(root.refresh)
   }
 
   function applyClientAttached(attached) {
@@ -249,6 +270,7 @@ Item {
       announcementQueue = []
       clearPending()
     }
+    Qt.callLater(root.refresh)
   }
 
   function isPending(paneId) {
@@ -297,6 +319,16 @@ Item {
     if (clientAttached) clearPending()
   }
 
+  function replaceBlocked(next) {
+    blockedByPane = next && typeof next === "object" ? next : {}
+    blockedRevision++
+  }
+
+  function replaceWorking(next) {
+    workingByPane = next && typeof next === "object" ? next : {}
+    workingRevision++
+  }
+
   function schedulePendingSave() {
     if (pendingStateLoaded) pendingSaveTimer.restart()
   }
@@ -326,27 +358,31 @@ Item {
   }
 
   function handleEvent(eventJson, contextJson) {
-    if (clientAttached) return
     var event = Model.parseEvent(eventJson, contextJson)
     if (!event.ok) {
       console.warn("udder: ignored malformed Herdr event")
       return
     }
 
-    if (event.kind === "closed") {
-      removePending(event.paneId)
-    } else if (event.kind === "detected" && event.released && event.finalStatus === "done") {
-      event.status = "done"
-      if (setPending(event)) queueAnnouncement(event)
-    } else if (event.kind === "detected" && event.released) {
-      removePending(event.paneId)
-    } else if (event.kind === "status" && event.status === "done") {
-      if (setPending(event)) queueAnnouncement(event)
-    } else if (event.kind === "status") {
-      removePending(event.paneId)
+    replaceBlocked(Model.applyBlockedEvent(blockedByPane, event))
+    replaceWorking(Model.applyWorkingEvent(workingByPane, event))
+
+    if (!clientAttached) {
+      if (event.kind === "closed") {
+        removePending(event.paneId)
+      } else if (event.kind === "detected" && event.released && event.finalStatus === "done") {
+        event.status = "done"
+        if (setPending(event)) queueAnnouncement(event)
+      } else if (event.kind === "detected" && event.released) {
+        removePending(event.paneId)
+      } else if (event.kind === "status" && event.status === "done") {
+        if (setPending(event)) queueAnnouncement(event)
+      } else if (event.kind === "status") {
+        removePending(event.paneId)
+      }
     }
 
-    if (panelVisible) Qt.callLater(refresh)
+    Qt.callLater(refresh)
   }
 
   function queueAnnouncement(record) {
@@ -403,6 +439,7 @@ Item {
   Component.onCompleted: {
     ensureStateDir.running = true
     ensureIntegration()
+    Qt.callLater(root.refresh)
   }
 
   Loader {

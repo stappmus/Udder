@@ -176,6 +176,53 @@ function countAgents(agents) {
   return counts
 }
 
+function copyPanes(panes) {
+  var next = {}
+  var source = objectValue(panes)
+  var keys = Object.keys(source)
+  for (var i = 0; i < keys.length; i++) {
+    var paneId = textValue(keys[i], "")
+    if (paneId !== "") next[paneId] = true
+  }
+  return next
+}
+
+function panesFromAgents(agents, status) {
+  var wanted = normalizeStatus(status)
+  var next = {}
+  var rows = arrayValue(agents)
+  for (var i = 0; i < rows.length; i++) {
+    var agent = objectValue(rows[i])
+    if (normalizeStatus(agent.status) !== wanted) continue
+    var paneId = textValue(agent.paneId, "")
+    if (paneId !== "") next[paneId] = true
+  }
+  return next
+}
+
+function applyStatusEvent(panes, event, status) {
+  var wanted = normalizeStatus(status)
+  var next = copyPanes(panes)
+  var paneId = textValue(event && event.paneId, "")
+  if (paneId === "") return next
+
+  var kind = textValue(event && event.kind, "")
+  if (kind === "closed" || (kind === "detected" && event.released === true)) {
+    delete next[paneId]
+    return next
+  }
+  if (kind === "status" || kind === "detected") {
+    if (normalizeStatus(event.status) === wanted) next[paneId] = true
+    else delete next[paneId]
+  }
+  return next
+}
+
+function blockedFromAgents(agents) { return panesFromAgents(agents, "blocked") }
+function applyBlockedEvent(blocked, event) { return applyStatusEvent(blocked, event, "blocked") }
+function workingFromAgents(agents) { return panesFromAgents(agents, "working") }
+function applyWorkingEvent(working, event) { return applyStatusEvent(working, event, "working") }
+
 function paneFocusRequest(paneId, requestId) {
   return {
     id: textValue(requestId, "udder-focus"),

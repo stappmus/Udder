@@ -33,7 +33,10 @@ UDDER_TEST_CAPTURE="$capture" UDDER_DEFAULT_SOCKET_PATH="$api_socket" \
   UDDER_PROC_NET_UNIX="$proc_table" UDDER_OMARCHY_SHELL="$fake_shell" \
   HERDR_SOCKET_PATH="$api_socket" HERDR_PLUGIN_EVENT_JSON='{"event":"pane_agent_status_changed"}' \
   "$PWD/udder-event"
-[[ ! -e $capture ]]
+mapfile -t attached_args <"$capture"
+[[ ${attached_args[0]} == stappmus.udder ]]
+[[ ${attached_args[1]} == event ]]
+[[ ${attached_args[2]} == '{"event":"pane_agent_status_changed"}' ]]
 
 write_table 01 "$client_socket"
 detached=$(HERDR_SOCKET_PATH="$api_socket" UDDER_DEFAULT_SOCKET_PATH="$api_socket" UDDER_PROC_NET_UNIX="$proc_table" \

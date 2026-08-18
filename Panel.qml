@@ -19,6 +19,26 @@ Panel {
 
   property bool cursorActive: false
   property int cursorIndex: 0
+  property bool cowFlashHot: true
+
+  readonly property bool cowBlocked: {
+    if (herdr.blockedCount > 0) return true
+    var agents = herdr.agents
+    for (var i = 0; i < agents.length; i++) {
+      if (agents[i] && agents[i].status === "blocked") return true
+    }
+    return false
+  }
+  readonly property bool cowWorking: {
+    if (herdr.workingCount > 0) return true
+    var agents = herdr.agents
+    for (var i = 0; i < agents.length; i++) {
+      if (agents[i] && agents[i].status === "working") return true
+    }
+    return false
+  }
+  readonly property bool cowPending: herdr.pendingCount > 0 && !herdr.clientAttached
+  readonly property bool cowLit: cowWorking || cowPending || (cowBlocked && cowFlashHot)
 
   function alpha(color, amount) { return Qt.rgba(color.r, color.g, color.b, amount) }
 
@@ -36,6 +56,10 @@ Panel {
   }
 
   function tooltipText() {
+    if (root.cowBlocked)
+      return Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0) + " blocked · click to review"
+    if (root.cowWorking)
+      return Math.max(herdr.workingCount, Number(herdr.counts.working) || 0) + " working"
     if (herdr.pendingCount > 0)
       return herdr.pendingCount + " finished · click to open Herdr"
     if (herdr.clientAttached) return "Herdr is open · monitoring paused"
@@ -129,9 +153,19 @@ Panel {
         agents: herdr.counts,
         clientAttached: herdr.clientAttached,
         pending: herdr.pendingCount,
+        blocked: herdr.blockedCount,
+        working: herdr.workingCount,
         integration: herdr.integrationState
       })
     }
+  }
+
+  Timer {
+    interval: 450
+    repeat: true
+    running: root.cowBlocked
+    triggeredOnStart: true
+    onTriggered: root.cowFlashHot = !root.cowFlashHot
   }
 
   BarIconButton {
@@ -139,8 +173,8 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: "󰆚"
-    active: herdr.pendingCount > 0 && !herdr.clientAttached
-    dimmed: herdr.clientAttached
+    active: root.cowBlocked && root.cowFlashHot
+    dimmed: !root.cowLit
     tooltipText: root.tooltipText()
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) {
