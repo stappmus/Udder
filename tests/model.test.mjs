@@ -51,6 +51,55 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(model.countAgents(parsed.agents))),
   { total: 2, working: 1, blocked: 0, done: 1, idle: 0, unknown: 0 }
 );
+assert.deepEqual(JSON.parse(JSON.stringify(model.blockedFromAgents(parsed.agents))), {});
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.blockedFromAgents([
+    { paneId: "w1:p1", status: "working" },
+    { paneId: "w3:p1", status: "blocked" }
+  ]))),
+  { "w3:p1": true }
+);
+
+const blocked = model.applyBlockedEvent({}, {
+  kind: "status", paneId: "w3:p1", status: "blocked"
+});
+assert.deepEqual(JSON.parse(JSON.stringify(blocked)), { "w3:p1": true });
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.applyBlockedEvent(blocked, { kind: "status", paneId: "w3:p1", status: "working" }))),
+  {}
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.applyBlockedEvent(blocked, { kind: "closed", paneId: "w3:p1" }))),
+  {}
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.applyBlockedEvent(blocked, { kind: "detected", paneId: "w3:p1", released: true }))),
+  {}
+);
+
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.workingFromAgents(parsed.agents))),
+  { "w1:p1": true }
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.workingFromAgents([
+    { paneId: "w1:p1", status: "working" },
+    { paneId: "w3:p1", status: "blocked" }
+  ]))),
+  { "w1:p1": true }
+);
+const working = model.applyWorkingEvent({}, {
+  kind: "status", paneId: "w1:p1", status: "working"
+});
+assert.deepEqual(JSON.parse(JSON.stringify(working)), { "w1:p1": true });
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.applyWorkingEvent(working, { kind: "status", paneId: "w1:p1", status: "blocked" }))),
+  {}
+);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(model.applyWorkingEvent(working, { kind: "closed", paneId: "w1:p1" }))),
+  {}
+);
 
 const focusRequest = model.paneFocusRequest("w7:p1", "test-focus");
 assert.deepEqual(JSON.parse(JSON.stringify(focusRequest)), {

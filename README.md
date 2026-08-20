@@ -17,6 +17,8 @@ feel safe.
 
 ![Udder's Quickshell agent overview](preview.png)
 
+![Notification in the Omarchy bar when an agent is blocked](preview-blocked-alert.gif)
+
 ## Everyday use
 
 - Click the cow to see who is working, idle, blocked, or finished.

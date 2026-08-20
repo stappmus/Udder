@@ -43,14 +43,17 @@ esac
 # alert whose click would attach to a different server.
 [[ $api_socket == "$default_api_socket" ]] || exit 0
 
-# A connected terminal client already presents Herdr's own agent state. Do no
-# IPC and no notification work while it is attached.
-client_attached && exit 0
-
+# Completion notifications stay suppressed in the widget while a terminal is
+# attached. Events still need to reach Udder so the bar cow can flash for the
+# whole time an agent is blocked, including while Herdr is in front of you.
 event_json="${HERDR_PLUGIN_EVENT_JSON:-}"
 [[ -n $event_json ]] || exit 0
 context_json="${HERDR_PLUGIN_CONTEXT_JSON:-}"
 [[ -n $context_json ]] || context_json='{}'
+client_attached_text=false
+if client_attached; then
+  client_attached_text=true
+fi
 
 omarchy_shell="${UDDER_OMARCHY_SHELL:-omarchy-shell}"
 command -v "$omarchy_shell" >/dev/null 2>&1 || exit 0
@@ -58,4 +61,4 @@ command -v "$omarchy_shell" >/dev/null 2>&1 || exit 0
 # Quickshell owns deduplication, durable pending state, and the clickable
 # desktop notification. A missing/reloading shell is deliberately non-fatal to
 # Herdr's event hook.
-"$omarchy_shell" stappmus.udder event "$event_json" "$context_json" >/dev/null 2>&1 || true
+"$omarchy_shell" stappmus.udder event "$event_json" "$context_json" "$client_attached_text" >/dev/null 2>&1 || true

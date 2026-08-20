@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "stappmus.udder",
   "name": "Udder",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "stappmus",
   "license": "MIT",
   "description": "See all your Herdr agents from the Omarchy bar, get notified when one finishes while you are away, and jump straight back to it.",
