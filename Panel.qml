@@ -58,10 +58,10 @@ Panel {
   function tooltipText() {
     if (root.cowBlocked)
       return Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0) + " blocked · click to review"
-    if (root.cowWorking)
-      return Math.max(herdr.workingCount, Number(herdr.counts.working) || 0) + " working"
     if (herdr.pendingCount > 0)
       return herdr.pendingCount + " finished · click to open Herdr"
+    if (root.cowWorking)
+      return Math.max(herdr.workingCount, Number(herdr.counts.working) || 0) + " working"
     if (herdr.clientAttached) return "Herdr is open · monitoring paused"
     if (herdr.state === "ready")
       return herdr.counts.total + " Herdr agent" + (herdr.counts.total === 1 ? "" : "s")
@@ -141,7 +141,8 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function refresh(): string { herdr.refresh(); return "ok" }
-    function event(eventJson: string, contextJson: string): string {
+    function event(eventJson: string, contextJson: string, clientAttachedText: string): string {
+      herdr.applyClientAttached(clientAttachedText === "true")
       herdr.handleEvent(eventJson, contextJson)
       return "ok"
     }
@@ -181,6 +182,8 @@ Panel {
         root.launchHerdr()
       } else if (buttonCode === Qt.RightButton) {
         herdr.refresh()
+      } else if (root.cowBlocked) {
+        root.toggle()
       } else if (herdr.pendingCount > 0 && !herdr.clientAttached) {
         root.launchHerdr()
       } else {

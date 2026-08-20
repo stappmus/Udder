@@ -158,8 +158,18 @@ Item {
     } else {
       state = "error"
       message = parsed.message
+      clearLiveState()
     }
     runQueuedRefresh()
+  }
+
+  function clearLiveState() {
+    agents = []
+    livePanes = ({})
+    serverVersion = ""
+    protocol = 0
+    replaceBlocked({})
+    replaceWorking({})
   }
 
   function failRequest(reason) {
@@ -170,10 +180,7 @@ Item {
     apiSocketLoader.active = false
     state = "offline"
     message = String(reason || "Herdr server is not running.")
-    agents = []
-    livePanes = ({})
-    serverVersion = ""
-    protocol = 0
+    clearLiveState()
     runQueuedRefresh()
   }
 
@@ -257,8 +264,13 @@ Item {
       if (fields[5] === "03" && path === clientSocketPath) attached = true
     }
     applyClientAttached(attached)
-    if (serverPresent && state !== "ready" && !requestPending)
+    if (!serverPresent && state === "ready" && !requestPending) {
+      state = "offline"
+      message = "Herdr server is not running."
+      clearLiveState()
+    } else if (serverPresent && state !== "ready" && !requestPending) {
       Qt.callLater(root.refresh)
+    }
   }
 
   function applyClientAttached(attached) {

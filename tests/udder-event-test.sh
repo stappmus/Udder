@@ -37,6 +37,8 @@ mapfile -t attached_args <"$capture"
 [[ ${attached_args[0]} == stappmus.udder ]]
 [[ ${attached_args[1]} == event ]]
 [[ ${attached_args[2]} == '{"event":"pane_agent_status_changed"}' ]]
+[[ ${attached_args[3]} == '{}' ]]
+[[ ${attached_args[4]} == true ]]
 
 write_table 01 "$client_socket"
 detached=$(HERDR_SOCKET_PATH="$api_socket" UDDER_DEFAULT_SOCKET_PATH="$api_socket" UDDER_PROC_NET_UNIX="$proc_table" \
@@ -53,5 +55,6 @@ mapfile -t args <"$capture"
 [[ ${args[1]} == event ]]
 [[ ${args[2]} == '{"event":"pane_agent_status_changed"}' ]]
 [[ ${args[3]} == '{"workspace_label":"Udder"}' ]]
+[[ ${args[4]} == false ]]
 
 printf 'udder-event tests passed\n'
