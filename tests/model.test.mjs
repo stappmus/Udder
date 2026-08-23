@@ -165,9 +165,12 @@ assert.equal(released.released, true);
 assert.equal(released.finalStatus, "done");
 
 const pending = model.parsePending(JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
   remoteTracking: {
-    "remote-a": true,
+    "WyJrb250b3IiLCJkZWZhdWx0Il0=": true,
+    "stored-remote": {
+      target: "devbox", session: "agents", label: "Development / agents"
+    },
     "remote-disabled": false,
     "remote-invalid": "true"
   },
@@ -182,7 +185,25 @@ assert.equal(pending.ok, true);
 assert.equal(pending.pending["w1:p1"].agentLabel, "Codex");
 assert.equal(pending.pending["w1:p1"].released, true);
 assert.equal(pending.pending["w1:p1"].finalStatus, "done");
-assert.deepEqual(JSON.parse(JSON.stringify(pending.remoteTracking)), { "remote-a": true });
+assert.deepEqual(JSON.parse(JSON.stringify(pending.remoteTracking)), {
+  "WyJrb250b3IiLCJkZWZhdWx0Il0=": {
+    id: "WyJrb250b3IiLCJkZWZhdWx0Il0=", target: "kontor", session: "default", label: "kontor"
+  },
+  "stored-remote": {
+    id: "stored-remote", target: "devbox", session: "agents", label: "Development / agents"
+  }
+});
+assert.deepEqual(JSON.parse(JSON.stringify(model.mergeRemoteConnections([], pending.remoteTracking))), [
+  {
+    id: "WyJrb250b3IiLCJkZWZhdWx0Il0=", target: "kontor", session: "default", label: "kontor", pid: 0
+  },
+  {
+    id: "stored-remote", target: "devbox", session: "agents", label: "Development / agents", pid: 0
+  }
+]);
+assert.equal(model.mergeRemoteConnections([{
+  id: "WyJrb250b3IiLCJkZWZhdWx0Il0=", target: "kontor", session: "default", label: "kontor", pid: 210
+}], pending.remoteTracking)[0].pid, 210);
 assert.equal(model.parsePending("not json").ok, false);
 
 console.log("model tests passed");

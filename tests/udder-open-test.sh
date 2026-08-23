@@ -75,6 +75,20 @@ mapfile -t remote_calls <"$capture"
 [[ ${remote_calls[0]} == $'hyprctl\tdispatch\thl.dsp.focus({ window = "address:0x2222" })' ]]
 [[ ${#remote_calls[@]} -eq 1 ]]
 
+: >"$capture"
+run_open --remote-target kontor --remote-session default
+mapfile -t target_calls <"$capture"
+[[ ${target_calls[0]} == $'hyprctl\tdispatch\thl.dsp.focus({ window = "address:0x2222" })' ]]
+[[ ${#target_calls[@]} -eq 1 ]]
+
+: >"$capture"
+UDDER_TEST_PIDS='110 211 300' run_open --remote-target kontor --remote-session default
+[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\therdr\t--remote\tkontor' ]]
+
+: >"$capture"
+UDDER_TEST_PIDS='110 211 300' run_open --remote-target devbox --remote-session agents
+[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\therdr\t--remote\tdevbox\t--session\tagents' ]]
+
 actual=$("$repo_root/udder-open" --dry-run)
 [[ $actual == focus$'\t'* ]]
 

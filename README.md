@@ -50,7 +50,7 @@ Requirements:
 
 - Omarchy Quattro with its current Quickshell plugin API and Hyprland.
 - Herdr 0.7.0 or newer.
-- `jq`, `flock`, `pgrep`, and `timeout`, all included in a normal Omarchy
+- `jq`, `flock`, `pgrep`, `sha256sum`, and `timeout`, all included in a normal Omarchy
   installation.
 - OpenSSH for optional remote tracking, already required by `herdr --remote`.
 - For the optional completion chime: `pw-play`, `paplay`, `ffplay`, `mpg123`,
@@ -67,15 +67,18 @@ herdr --remote my-server
 
 Then open Udder from the cow in your bar and press **Track** when it asks about
 the new remote. That's it—the remote gets its own tab beside **Local**, with the
-same working, blocked, idle, and done overview. This also works when the remote
-command is wrapped in a friendly alias or shell function such as
-`work-herdr`.
+same working, blocked, idle, and done overview. You can close the terminal you
+used to connect; Udder keeps tracking the remote in the background and opens a
+new remote Herdr terminal when you select one of its agents. This also works
+when the remote command is wrapped in a friendly alias or shell function such
+as `work-herdr`.
 
 Udder never tracks a remote without asking. It remembers approved SSH targets
-and named Herdr sessions, reuses the connection Herdr already opened, and never
-stores SSH credentials. The `herdr --remote` client needs to remain connected
-while Udder watches it. Choose **Not now** to ignore a connection for the moment,
-or **Stop tracking** later to remove the remembered choice.
+and named Herdr sessions, uses your normal SSH configuration, and never stores
+SSH credentials. For a passphrase-protected key, load it into `ssh-agent` first
+with `ssh-add` so Udder can reconnect without an interactive terminal. Choose
+**Not now** to ignore a connection for the moment, or **Stop tracking** later to
+close Udder's SSH connection and remove the remembered choice.
 
 Remote agent rows return to the matching remote Herdr window. Exact pane focus
 is currently local-only because Herdr's public remote CLI does not expose an
@@ -101,10 +104,12 @@ while visible.
 The only idle check is a direct read of `/proc/net/unix` every five seconds to
 notice a newly attached client and clear stale alerts. It launches no process,
 uses no network, and can be relaxed to 60 seconds in the widget settings.
-Approved remote sessions are the exception: while their existing
-`herdr --remote` connection is active, Udder requests a read-only snapshot over
-that SSH control connection every ten seconds by default. This interval can be
-set from 5 to 60 seconds or stopped entirely with **Stop tracking**.
+Approved remote sessions are the exception: Udder keeps a private multiplexed
+SSH connection and requests a read-only snapshot every ten seconds by default,
+even after the original `herdr --remote` terminal closes. If the connection is
+lost, the next refresh reconnects through your normal SSH configuration. This
+interval can be set from 5 to 60 seconds or stopped entirely with **Stop
+tracking**.
 The completion sound launches an audio player only for the 1.08-second chime
 when Udder posts a notification, and can be disabled in the widget settings.
 

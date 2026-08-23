@@ -11,6 +11,23 @@ ln -s -- "$repo_root" "$smoke_root/plugin"
 ln -s -- /usr/share/omarchy/shell/Commons "$smoke_root/Commons"
 ln -s -- /usr/share/omarchy/shell/Ui "$smoke_root/Ui"
 mkdir -p -- "$smoke_root/state"
+mkdir -p -- "$smoke_root/proc" "$smoke_root/bin" "$smoke_root/runtime" "$smoke_root/state/omarchy"
+
+cat >"$smoke_root/state/omarchy/udder.json" <<'JSON'
+{
+  "schemaVersion": 2,
+  "pending": {},
+  "remoteTracking": {
+    "WyJ0ZXN0Ym94IiwiZGVmYXVsdCJd": true
+  }
+}
+JSON
+
+cat >"$smoke_root/bin/ssh" <<'SCRIPT'
+#!/bin/bash
+printf '%s\n' '{"result":{"snapshot":{"version":"0.8.2","protocol":20,"workspaces":[],"tabs":[],"panes":[],"agents":[]}}}'
+SCRIPT
+chmod +x "$smoke_root/bin/ssh"
 
 focus_pane=""
 if command -v herdr >/dev/null 2>&1; then
@@ -19,6 +36,8 @@ fi
 
 set +e
 output=$(UDDER_SMOKE_PANE_ID="$focus_pane" XDG_STATE_HOME="$smoke_root/state" \
+  UDDER_PROC_ROOT="$smoke_root/proc" UDDER_RUNTIME_ROOT="$smoke_root/runtime" \
+  UDDER_SSH_BIN="$smoke_root/bin/ssh" \
   timeout --kill-after=2s 8s quickshell --no-color -p "$smoke_root" 2>&1)
 status=$?
 set -e
