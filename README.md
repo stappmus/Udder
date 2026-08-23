@@ -58,17 +58,24 @@ Requirements:
 
 ## Remote sessions
 
-Udder discovers active `herdr --remote <ssh-target>` clients, including ones
-started through aliases or shell functions. It never starts tracking by itself.
-Choose **Track** in the panel and Udder remembers that SSH target and named
-Herdr session; choose **Not now** to dismiss it until that connection closes.
+Want to keep an eye on Herdr running on another computer? Connect to it once
+through Herdr's normal SSH support:
 
-Tracked sessions appear beside **Local** in the panel. Udder reuses Herdr's
-existing private SSH control connection to run the read-only
-`herdr api snapshot` command, so it neither opens another login nor stores SSH
-credentials. **Stop tracking** removes the remembered choice. Remote sessions
-must already be connected through `herdr --remote`; Udder does not initiate SSH
-connections itself.
+```bash
+herdr --remote my-server
+```
+
+Then open Udder from the cow in your bar and press **Track** when it asks about
+the new remote. That's it—the remote gets its own tab beside **Local**, with the
+same working, blocked, idle, and done overview. This also works when the remote
+command is wrapped in a friendly alias or shell function such as
+`work-herdr`.
+
+Udder never tracks a remote without asking. It remembers approved SSH targets
+and named Herdr sessions, reuses the connection Herdr already opened, and never
+stores SSH credentials. The `herdr --remote` client needs to remain connected
+while Udder watches it. Choose **Not now** to ignore a connection for the moment,
+or **Stop tracking** later to remove the remembered choice.
 
 Remote agent rows return to the matching remote Herdr window. Exact pane focus
 is currently local-only because Herdr's public remote CLI does not expose an
