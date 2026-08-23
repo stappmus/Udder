@@ -51,6 +51,17 @@ assert.deepEqual(
   JSON.parse(JSON.stringify(model.countAgents(parsed.agents))),
   { total: 2, working: 1, blocked: 0, done: 1, idle: 0, unknown: 0 }
 );
+
+const discovered = model.parseRemoteDiscovery(JSON.stringify([
+  { id: "remote-a", target: "kontor", session: "default", label: "kontor", pid: 210 },
+  { id: "remote-a", target: "duplicate", session: "default", label: "duplicate", pid: 211 },
+  { id: "", target: "invalid", session: "default", pid: 212 }
+]));
+assert.equal(discovered.ok, true);
+assert.deepEqual(JSON.parse(JSON.stringify(discovered.remotes)), [{
+  id: "remote-a", target: "kontor", session: "default", label: "kontor", pid: 210
+}]);
+assert.equal(model.parseRemoteDiscovery("not json").ok, false);
 assert.deepEqual(JSON.parse(JSON.stringify(model.blockedFromAgents(parsed.agents))), {});
 assert.deepEqual(
   JSON.parse(JSON.stringify(model.blockedFromAgents([
@@ -155,6 +166,11 @@ assert.equal(released.finalStatus, "done");
 
 const pending = model.parsePending(JSON.stringify({
   schemaVersion: 1,
+  remoteTracking: {
+    "remote-a": true,
+    "remote-disabled": false,
+    "remote-invalid": "true"
+  },
   pending: {
     "w1:p1": {
       workspaceLabel: "API", agent: "codex", released: true,
@@ -166,6 +182,7 @@ assert.equal(pending.ok, true);
 assert.equal(pending.pending["w1:p1"].agentLabel, "Codex");
 assert.equal(pending.pending["w1:p1"].released, true);
 assert.equal(pending.pending["w1:p1"].finalStatus, "done");
+assert.deepEqual(JSON.parse(JSON.stringify(pending.remoteTracking)), { "remote-a": true });
 assert.equal(model.parsePending("not json").ok, false);
 
 console.log("model tests passed");

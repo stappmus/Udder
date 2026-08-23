@@ -69,6 +69,12 @@ mapfile -t calls <"$capture"
 UDDER_TEST_PIDS='210 211 300' run_open
 [[ $(<"$capture") == $'omarchy\tlaunch\tterminal\therdr' ]]
 
+: >"$capture"
+run_open --remote 210
+mapfile -t remote_calls <"$capture"
+[[ ${remote_calls[0]} == $'hyprctl\tdispatch\thl.dsp.focus({ window = "address:0x2222" })' ]]
+[[ ${#remote_calls[@]} -eq 1 ]]
+
 actual=$("$repo_root/udder-open" --dry-run)
 [[ $actual == focus$'\t'* ]]
 

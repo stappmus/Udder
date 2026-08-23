@@ -20,9 +20,19 @@ Panel {
   property bool cursorActive: false
   property int cursorIndex: 0
   property bool cowFlashHot: true
+  property string selectedSessionId: "local"
+
+  readonly property var sessionOptions: {
+    var rows = [{ value: "local", label: "Local", icon: "󰒋" }]
+    var remotes = herdr.trackedRemoteConnections
+    for (var i = 0; i < remotes.length; i++) {
+      rows.push({ value: remotes[i].id, label: remotes[i].label, icon: "󰌘" })
+    }
+    return rows
+  }
 
   readonly property bool cowBlocked: {
-    if (herdr.blockedCount > 0) return true
+    if (herdr.blockedCount + herdr.trackedBlockedCount > 0) return true
     var agents = herdr.agents
     for (var i = 0; i < agents.length; i++) {
       if (agents[i] && agents[i].status === "blocked") return true
@@ -30,7 +40,7 @@ Panel {
     return false
   }
   readonly property bool cowWorking: {
-    if (herdr.workingCount > 0) return true
+    if (herdr.workingCount + herdr.trackedWorkingCount > 0) return true
     var agents = herdr.agents
     for (var i = 0; i < agents.length; i++) {
       if (agents[i] && agents[i].status === "working") return true
@@ -38,11 +48,22 @@ Panel {
     return false
   }
   readonly property bool cowPending: herdr.pendingCount > 0 && !herdr.clientAttached
-  readonly property bool cowLit: cowWorking || cowPending || (cowBlocked && cowFlashHot)
+  readonly property bool cowRemotePrompt: herdr.remotePrompt !== null
+  readonly property bool cowLit: cowWorking || cowPending || cowRemotePrompt || (cowBlocked && cowFlashHot)
 
   function alpha(color, amount) { return Qt.rgba(color.r, color.g, color.b, amount) }
 
   function heroMeta() {
+    if (herdr.viewingRemote) {
+      if (herdr.viewLoading && herdr.viewState !== "ready") return "Checking " + herdr.viewLabel + " over SSH…"
+      if (herdr.viewState !== "ready") return herdr.viewMessage
+      if (herdr.viewCounts.total === 0) return "No agents are running on " + herdr.viewLabel
+      var remoteParts = [herdr.viewCounts.total + " agent" + (herdr.viewCounts.total === 1 ? "" : "s")]
+      if (herdr.viewCounts.working > 0) remoteParts.push(herdr.viewCounts.working + " working")
+      if (herdr.viewCounts.blocked > 0) remoteParts.push(herdr.viewCounts.blocked + " blocked")
+      if (herdr.viewCounts.done > 0) remoteParts.push(herdr.viewCounts.done + " done")
+      return remoteParts.join(" · ")
+    }
     if (herdr.clientAttached)
       return "Herdr attached · completion monitoring paused"
     if (herdr.loading && herdr.state !== "ready") return "Checking the default Herdr session…"
@@ -57,11 +78,15 @@ Panel {
 
   function tooltipText() {
     if (root.cowBlocked)
-      return Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0) + " blocked · click to review"
+      return Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0)
+        + herdr.trackedBlockedCount + " blocked · click to review"
     if (herdr.pendingCount > 0)
       return herdr.pendingCount + " finished · click to open Herdr"
+    if (root.cowRemotePrompt)
+      return "Remote Herdr detected · click to choose"
     if (root.cowWorking)
-      return Math.max(herdr.workingCount, Number(herdr.counts.working) || 0) + " working"
+      return Math.max(herdr.workingCount, Number(herdr.counts.working) || 0)
+        + herdr.trackedWorkingCount + " working"
     if (herdr.clientAttached) return "Herdr is open · monitoring paused"
     if (herdr.state === "ready")
       return herdr.counts.total + " Herdr agent" + (herdr.counts.total === 1 ? "" : "s")
@@ -69,6 +94,15 @@ Panel {
   }
 
   function launchHerdr(target) {
+    if (herdr.viewingRemote) {
+      close()
+      herdr.openRemote(herdr.activeRemoteId)
+      return
+    }
+    launchLocalHerdr(target)
+  }
+
+  function launchLocalHerdr(target) {
     var paneId = ""
     if (typeof target === "string") paneId = target
     else if (target && target.paneId) paneId = String(target.paneId)
@@ -79,16 +113,16 @@ Panel {
   }
 
   function launchSelectedHerdr() {
-    if (herdr.agents.length > 0 && cursorIndex >= 0 && cursorIndex < herdr.agents.length)
-      launchHerdr(herdr.agents[cursorIndex])
+    if (herdr.viewAgents.length > 0 && cursorIndex >= 0 && cursorIndex < herdr.viewAgents.length)
+      launchHerdr(herdr.viewAgents[cursorIndex])
     else
       launchHerdr()
   }
 
   function moveCursor(delta) {
-    if (herdr.agents.length === 0) return
+    if (herdr.viewAgents.length === 0) return
     cursorActive = true
-    cursorIndex = Math.max(0, Math.min(herdr.agents.length - 1, cursorIndex + delta))
+    cursorIndex = Math.max(0, Math.min(herdr.viewAgents.length - 1, cursorIndex + delta))
     scrollSelectedIntoView()
   }
 
@@ -107,8 +141,25 @@ Panel {
   }
 
   function ensureCursor() {
-    if (herdr.agents.length === 0) cursorIndex = 0
-    else cursorIndex = Math.max(0, Math.min(herdr.agents.length - 1, cursorIndex))
+    if (herdr.viewAgents.length === 0) cursorIndex = 0
+    else cursorIndex = Math.max(0, Math.min(herdr.viewAgents.length - 1, cursorIndex))
+  }
+
+  function selectSession(sessionId) {
+    var wanted = String(sessionId || "local")
+    selectedSessionId = wanted
+    herdr.setActiveRemote(wanted === "local" ? "" : wanted)
+    cursorActive = false
+    cursorIndex = 0
+    if (panelFlick) panelFlick.contentY = 0
+    herdr.refreshView()
+  }
+
+  function ensureSelectedSession() {
+    if (selectedSessionId === "local") return
+    for (var i = 0; i < herdr.trackedRemoteConnections.length; i++)
+      if (herdr.trackedRemoteConnections[i].id === selectedSessionId) return
+    selectSession("local")
   }
 
   implicitWidth: button.implicitWidth
@@ -117,10 +168,14 @@ Panel {
   onOpenedChanged: {
     herdr.panelVisible = opened
     if (opened) {
+      if (root.cowBlocked && herdr.blockedCount === 0 && herdr.counts.blocked === 0) {
+        var blockedRemoteId = herdr.firstTrackedRemoteWithStatus("blocked")
+        if (blockedRemoteId !== "") root.selectSession(blockedRemoteId)
+      }
       cursorActive = false
       cursorIndex = 0
       if (panelFlick) panelFlick.contentY = 0
-      herdr.refresh()
+      herdr.refreshView()
       Qt.callLater(function() { keyCatcher.forceActiveFocus() })
     }
   }
@@ -128,8 +183,12 @@ Panel {
   Service {
     id: herdr
     settings: root.settings
-    onAgentsChanged: root.ensureCursor()
+    onViewAgentsChanged: root.ensureCursor()
+    onTrackedRemoteConnectionsChanged: root.ensureSelectedSession()
     onTerminalLaunchRequested: Quickshell.execDetached([herdr.pluginRoot + "/udder-open"])
+    onRemoteTerminalLaunchRequested: function(pid) {
+      Quickshell.execDetached([herdr.pluginRoot + "/udder-open", "--remote", String(pid)])
+    }
   }
 
   IpcHandler {
@@ -140,13 +199,13 @@ Panel {
     function show(): void { root.open() }
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
-    function refresh(): string { herdr.refresh(); return "ok" }
+    function refresh(): string { herdr.refreshAll(); return "ok" }
     function event(eventJson: string, contextJson: string, clientAttachedText: string): string {
       herdr.applyClientAttached(clientAttachedText === "true")
       herdr.handleEvent(eventJson, contextJson)
       return "ok"
     }
-    function openHerdr(): void { root.launchHerdr() }
+    function openHerdr(): void { root.launchLocalHerdr() }
     function clientActive(): void { herdr.applyClientAttached(true) }
     function status(): string {
       return JSON.stringify({
@@ -156,6 +215,13 @@ Panel {
         pending: herdr.pendingCount,
         blocked: herdr.blockedCount,
         working: herdr.workingCount,
+        remoteDiscovered: herdr.remoteConnections.length,
+        remotes: herdr.trackedRemoteConnections.length,
+        remoteAgents: herdr.trackedAgentCount,
+        remoteBlocked: herdr.trackedBlockedCount,
+        remoteWorking: herdr.trackedWorkingCount,
+        activeRemote: herdr.activeRemoteId,
+        remotePrompt: herdr.remotePrompt ? herdr.remotePrompt.label : "",
         integration: herdr.integrationState
       })
     }
@@ -179,13 +245,13 @@ Panel {
     tooltipText: root.tooltipText()
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.MiddleButton) {
-        root.launchHerdr()
+        root.launchLocalHerdr()
       } else if (buttonCode === Qt.RightButton) {
-        herdr.refresh()
+        herdr.refreshAll()
       } else if (root.cowBlocked) {
         root.toggle()
       } else if (herdr.pendingCount > 0 && !herdr.clientAttached) {
-        root.launchHerdr()
+        root.launchLocalHerdr()
       } else {
         root.toggle()
       }
@@ -210,7 +276,7 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(text) {
-        if (text === "r" || text === "R") herdr.refresh()
+        if (text === "r" || text === "R") herdr.refreshView()
       }
 
       Flickable {
@@ -231,9 +297,10 @@ Panel {
 
           PanelHero {
             width: parent.width
-            title: "Udder"
+            title: herdr.viewingRemote ? "Udder · " + herdr.viewLabel : "Udder"
             meta: root.heroMeta()
-            detail: herdr.clientAttached ? "ATTACHED" : (herdr.pendingCount > 0 ? herdr.pendingCount + " READY" : "WATCHING")
+            detail: herdr.viewingRemote ? "REMOTE" : (herdr.clientAttached
+              ? "ATTACHED" : (herdr.pendingCount > 0 ? herdr.pendingCount + " READY" : "WATCHING"))
             foreground: root.foreground
             fontFamily: root.fontFamily
             iconComponent: Component {
@@ -249,11 +316,123 @@ Panel {
           }
 
           BorderSurface {
-            visible: herdr.state !== "ready"
+            visible: herdr.remotePrompt !== null
+            width: parent.width
+            implicitHeight: remotePromptContent.implicitHeight + Style.space(20)
+            color: root.alpha(root.accent, 0.08)
+            borderSpec: Border.flat(root.alpha(root.accent, 0.35), 1)
+            radius: Style.cornerRadius
+
+            Column {
+              id: remotePromptContent
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.margins: Style.space(10)
+              spacing: Style.space(8)
+
+              Text {
+                width: parent.width
+                text: herdr.remotePrompt
+                  ? "Remote Herdr detected: " + herdr.remotePrompt.label : ""
+                color: root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: true
+                wrapMode: Text.WordWrap
+              }
+
+              Text {
+                width: parent.width
+                text: "Track its agents in Udder over the existing SSH connection?"
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                wrapMode: Text.WordWrap
+              }
+
+              Row {
+                spacing: Style.space(8)
+
+                Button {
+                  text: "Track"
+                  bordered: true
+                  foreground: root.foreground
+                  accent: root.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.bodySmall
+                  onClicked: {
+                    var remote = herdr.remotePrompt
+                    if (!remote) return
+                    herdr.trackRemote(remote.id)
+                    root.selectSession(remote.id)
+                  }
+                }
+
+                Button {
+                  text: "Not now"
+                  bordered: true
+                  foreground: root.foreground
+                  accent: root.accent
+                  fontFamily: root.fontFamily
+                  fontSize: Style.font.bodySmall
+                  onClicked: {
+                    if (herdr.remotePrompt) herdr.dismissRemote(herdr.remotePrompt.id)
+                  }
+                }
+              }
+            }
+          }
+
+          ButtonGroup {
+            visible: root.sessionOptions.length > 1
+            options: root.sessionOptions
+            value: root.selectedSessionId
+            foreground: root.foreground
+            accent: root.accent
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            focusable: false
+            onChanged: function(value) { root.selectSession(value) }
+          }
+
+          Row {
+            visible: herdr.viewingRemote
+            width: parent.width
+            spacing: Style.space(8)
+
+            Text {
+              width: parent.width - stopTrackingButton.implicitWidth - parent.spacing
+              anchors.verticalCenter: parent.verticalCenter
+              text: "Connected through Herdr’s existing SSH session"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+
+            Button {
+              id: stopTrackingButton
+              text: "Stop tracking"
+              bordered: true
+              foreground: root.foreground
+              accent: root.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              onClicked: {
+                var remoteId = herdr.activeRemoteId
+                root.selectSession("local")
+                herdr.untrackRemote(remoteId)
+              }
+            }
+          }
+
+          BorderSurface {
+            visible: herdr.viewState !== "ready"
             width: parent.width
             implicitHeight: serverStatus.implicitHeight + Style.space(20)
-            color: root.alpha(herdr.state === "offline" ? root.foreground : root.urgent, 0.08)
-            borderSpec: Border.flat(root.alpha(herdr.state === "offline" ? root.foreground : root.urgent, 0.30), 1)
+            color: root.alpha(herdr.viewState === "offline" ? root.foreground : root.urgent, 0.08)
+            borderSpec: Border.flat(root.alpha(herdr.viewState === "offline" ? root.foreground : root.urgent, 0.30), 1)
             radius: Style.cornerRadius
 
             Text {
@@ -262,8 +441,8 @@ Panel {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
               anchors.margins: Style.space(10)
-              text: herdr.message
-              color: herdr.state === "offline" ? root.dim : root.urgent
+              text: herdr.viewMessage
+              color: herdr.viewState === "offline" ? root.dim : root.urgent
               font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
               wrapMode: Text.WordWrap
@@ -272,7 +451,8 @@ Panel {
           }
 
           BorderSurface {
-            visible: herdr.integrationState !== "ready" && herdr.integrationState !== "checking"
+            visible: !herdr.viewingRemote
+              && herdr.integrationState !== "ready" && herdr.integrationState !== "checking"
             width: parent.width
             implicitHeight: integrationText.implicitHeight + Style.space(20)
             color: root.alpha(root.urgent, 0.08)
@@ -297,13 +477,13 @@ Panel {
 
           PanelSectionHeader {
             width: parent.width
-            text: "HERDR AGENTS  " + herdr.agents.length
+            text: herdr.viewLabel.toUpperCase() + " AGENTS  " + herdr.viewAgents.length
             foreground: root.foreground
             fontFamily: root.fontFamily
           }
 
           BorderSurface {
-            visible: herdr.state === "ready" && herdr.agents.length === 0
+            visible: herdr.viewState === "ready" && herdr.viewAgents.length === 0
             width: parent.width
             implicitHeight: emptyText.implicitHeight + Style.space(28)
             color: "transparent"
@@ -322,14 +502,14 @@ Panel {
 
           Repeater {
             id: agentRepeater
-            model: herdr.agents
+            model: herdr.viewAgents
 
             AgentRow {
               required property int index
               required property var modelData
               width: content.width
               agent: modelData
-              pending: herdr.isPending(modelData.paneId)
+              pending: !herdr.viewingRemote && herdr.isPending(modelData.paneId)
               selected: root.cursorActive && root.cursorIndex === index
               animationsEnabled: root.opened
               foreground: root.foreground

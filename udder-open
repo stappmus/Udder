@@ -8,10 +8,24 @@ jq_bin="${UDDER_JQ_BIN:-jq}"
 pgrep_bin="${UDDER_PGREP_BIN:-pgrep}"
 omarchy_bin="${UDDER_OMARCHY_BIN:-omarchy}"
 dry_run=false
+remote_pid=""
 
-if [[ ${1:-} == --dry-run ]]; then
-  dry_run=true
-fi
+while (($# > 0)); do
+  case "$1" in
+  --dry-run)
+    dry_run=true
+    ;;
+  --remote)
+    remote_pid="${2:-}"
+    shift
+    ;;
+  *)
+    printf 'Usage: udder-open [--dry-run] [--remote PID]\n' >&2
+    exit 2
+    ;;
+  esac
+  shift
+done
 
 read_ppid() {
   local pid="$1" key value rest
@@ -34,6 +48,19 @@ is_default_local_client() {
   [[ ${argv[0]##*/} == herdr ]]
 }
 
+is_remote_client() {
+  local pid="$1" arg
+  local -a argv=()
+  [[ $pid =~ ^[0-9]+$ && -r $proc_root/$pid/cmdline && -O $proc_root/$pid/cmdline ]] || return 1
+  mapfile -d '' -t argv <"$proc_root/$pid/cmdline"
+  ((${#argv[@]} >= 3)) || return 1
+  [[ ${argv[0]##*/} == herdr ]] || return 1
+  for arg in "${argv[@]:1}"; do
+    [[ $arg == --remote || $arg == --remote=* ]] && return 0
+  done
+  return 1
+}
+
 window_owns_process() {
   local window_pid="$1" process_pid="$2" current="$2" parent depth
   for ((depth = 0; depth < 64; depth++)); do
@@ -47,12 +74,17 @@ window_owns_process() {
 }
 
 declare -a local_clients=()
-while read -r pid; do
-  [[ $pid =~ ^[0-9]+$ ]] || continue
-  if is_default_local_client "$pid"; then
-    local_clients+=("$pid")
-  fi
-done < <("$pgrep_bin" -x herdr 2>/dev/null || true)
+if [[ -n $remote_pid ]]; then
+  is_remote_client "$remote_pid" || exit 1
+  local_clients+=("$remote_pid")
+else
+  while read -r pid; do
+    [[ $pid =~ ^[0-9]+$ ]] || continue
+    if is_default_local_client "$pid"; then
+      local_clients+=("$pid")
+    fi
+  done < <("$pgrep_bin" -x herdr 2>/dev/null || true)
+fi
 
 if ((${#local_clients[@]} > 0)); then
   clients_json=$($hyprctl_bin clients -j 2>/dev/null || printf '[]')
@@ -88,10 +120,16 @@ if ((${#local_clients[@]} > 0)); then
   )
 
   if $dry_run; then
-    printf 'unmapped-local-client\t%s\n' "${local_clients[0]}"
+    if [[ -n $remote_pid ]]; then
+      printf 'unmapped-remote-client\t%s\n' "${local_clients[0]}"
+    else
+      printf 'unmapped-local-client\t%s\n' "${local_clients[0]}"
+    fi
   fi
   exit 1
 fi
+
+[[ -z $remote_pid ]] || exit 1
 
 if $dry_run; then
   printf 'launch\n'

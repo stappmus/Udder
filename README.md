@@ -1,9 +1,10 @@
 # Udder
 
 Udder adds a small cow to the Omarchy bar that shows every coding agent in your
-local [Herdr](https://herdr.dev) session. Open it to see who is working, idle,
-blocked, or finished. Click any agent and Udder takes you to that exact
-conversation in the Herdr terminal you already had open.
+local [Herdr](https://herdr.dev) session and any remote sessions you approve.
+Open it to see who is working, idle, blocked, or finished. Click any local agent
+to return to that exact conversation, or a remote agent to return to its remote
+Herdr dashboard.
 
 It was made for the time between sending several agents to work and coming
 back for their answers. You can leave Herdr, get on with something else, and
@@ -25,8 +26,8 @@ feel safe.
 - Click an agent to jump to that exact agent in your local Herdr terminal.
 - If local Herdr is already open elsewhere, Udder takes you to its desktop
   instead of opening another terminal.
-- Remote Herdr sessions stay separate, so a local agent never sends you to an
-  SSH client by mistake.
+- When `herdr --remote <ssh-target>` connects, Udder asks whether to track it.
+  Approved remotes get their own session tab and stay separate from local work.
 - If you are away from Herdr when work finishes, Udder gives you one useful
   notification and Herdr's completion chime.
 
@@ -51,28 +52,52 @@ Requirements:
 - Herdr 0.7.0 or newer.
 - `jq`, `flock`, `pgrep`, and `timeout`, all included in a normal Omarchy
   installation.
+- OpenSSH for optional remote tracking, already required by `herdr --remote`.
 - For the optional completion chime: `pw-play`, `paplay`, `ffplay`, `mpg123`,
   or `mpv`. Udder quietly skips sound if none is available.
+
+## Remote sessions
+
+Udder discovers active `herdr --remote <ssh-target>` clients, including ones
+started through aliases or shell functions. It never starts tracking by itself.
+Choose **Track** in the panel and Udder remembers that SSH target and named
+Herdr session; choose **Not now** to dismiss it until that connection closes.
+
+Tracked sessions appear beside **Local** in the panel. Udder reuses Herdr's
+existing private SSH control connection to run the read-only
+`herdr api snapshot` command, so it neither opens another login nor stores SSH
+credentials. **Stop tracking** removes the remembered choice. Remote sessions
+must already be connected through `herdr --remote`; Udder does not initiate SSH
+connections itself.
+
+Remote agent rows return to the matching remote Herdr window. Exact pane focus
+is currently local-only because Herdr's public remote CLI does not expose an
+arbitrary-pane focus command.
 
 ## Controls
 
 - Left click: open the overview, or open Herdr when finished work is pending.
 - Middle click: return to the local Herdr terminal, or open one if needed.
 - Right click: refresh the cached overview.
-- Panel: click an agent row—or select it with `j`/`k` or arrows and press
-  Enter—to focus that exact pane, then move to the desktop containing the local
-  Herdr terminal. Remote (`herdr --remote ...`) and named-session clients are
-  deliberately kept separate. `r` refreshes and Esc closes.
+- Panel: choose **Local** or an approved remote tab. Click an agent row—or select
+  it with `j`/`k` or arrows and press Enter—to return to the matching Herdr
+  dashboard. Local rows focus the exact pane. `r` refreshes the selected session
+  and Esc closes.
 
 ## Resource use
 
-Udder does not poll Herdr in the background. Herdr launches the tiny
-`udder-event` hook only when an agent lifecycle event occurs. The overview asks
-for one socket snapshot when opened, then refreshes only while visible.
+Udder does not poll the local Herdr server in the background. Herdr launches the
+tiny `udder-event` hook only when a local agent lifecycle event occurs. The
+overview asks for one local socket snapshot when opened, then refreshes only
+while visible.
 
 The only idle check is a direct read of `/proc/net/unix` every five seconds to
 notice a newly attached client and clear stale alerts. It launches no process,
 uses no network, and can be relaxed to 60 seconds in the widget settings.
+Approved remote sessions are the exception: while their existing
+`herdr --remote` connection is active, Udder requests a read-only snapshot over
+that SSH control connection every ten seconds by default. This interval can be
+set from 5 to 60 seconds or stopped entirely with **Stop tracking**.
 The completion sound launches an audio player only for the 1.08-second chime
 when Udder posts a notification, and can be disabled in the widget settings.
 
@@ -85,8 +110,8 @@ Unlink the companion before removing the Omarchy checkout:
 omarchy plugin remove stappmus.udder
 ```
 
-Udder stores pending completion state in
-`~/.local/state/omarchy/udder.json`.
+Udder stores pending local completion state and approved remote-session choices
+in `~/.local/state/omarchy/udder.json`.
 You may remove that file and `udder-integration.lock` after uninstalling; no
 other Udder process or service remains installed.
 

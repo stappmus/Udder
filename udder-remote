@@ -1,0 +1,126 @@
+#!/bin/bash
+
+set -euo pipefail
+
+proc_root="${UDDER_PROC_ROOT:-/proc}"
+tmp_root="${UDDER_TMP_ROOT:-${TMPDIR:-/tmp}}"
+ssh_bin="${UDDER_SSH_BIN:-ssh}"
+timeout_bin="${UDDER_TIMEOUT_BIN:-timeout}"
+jq_bin="${UDDER_JQ_BIN:-jq}"
+
+remote_target=""
+remote_session="default"
+remote_config=""
+remote_control=""
+
+control_is_usable() {
+  local path="$1"
+  [[ -S $path || (${UDDER_TEST_ALLOW_CONTROL_FILE:-0} == 1 && -f $path) ]]
+}
+
+read_remote_process() {
+  local pid="$1" arg index
+  local -a argv=()
+  [[ $pid =~ ^[0-9]+$ && -r $proc_root/$pid/cmdline && -O $proc_root/$pid/cmdline ]] || return 1
+  mapfile -d '' -t argv <"$proc_root/$pid/cmdline"
+  ((${#argv[@]} >= 3)) || return 1
+  [[ ${argv[0]##*/} == herdr ]] || return 1
+
+  remote_target=""
+  remote_session="default"
+  for ((index = 1; index < ${#argv[@]}; index++)); do
+    arg="${argv[index]}"
+    if [[ $arg == --remote && $((index + 1)) -lt ${#argv[@]} ]]; then
+      remote_target="${argv[index + 1]}"
+      ((index += 1))
+    elif [[ $arg == --remote=* ]]; then
+      remote_target="${arg#--remote=}"
+    elif [[ $arg == --session && $((index + 1)) -lt ${#argv[@]} ]]; then
+      remote_session="${argv[index + 1]}"
+      ((index += 1))
+    elif [[ $arg == --session=* ]]; then
+      remote_session="${arg#--session=}"
+    fi
+  done
+
+  [[ -n $remote_target && $remote_target != -* && -n $remote_session ]] || return 1
+}
+
+find_remote_control() {
+  local pid="$1" directory
+  remote_config=""
+  remote_control=""
+  for directory in "$tmp_root"/herdr-ssh-"$pid"-*; do
+    [[ -d $directory && -O $directory && -r $directory/config && -O $directory/config ]] || continue
+    control_is_usable "$directory/ctl" || continue
+    [[ -O $directory/ctl ]] || continue
+    remote_config="$directory/config"
+    remote_control="$directory/ctl"
+    return 0
+  done
+  return 1
+}
+
+remote_id() {
+  "$jq_bin" -cnr --arg target "$remote_target" --arg session "$remote_session" \
+    '[$target, $session] | @json | @base64'
+}
+
+discover() {
+  local proc_dir pid id label record separator=""
+  printf '['
+  for proc_dir in "$proc_root"/[0-9]*; do
+    [[ -d $proc_dir ]] || continue
+    pid="${proc_dir##*/}"
+    read_remote_process "$pid" || continue
+    find_remote_control "$pid" || continue
+    id=$(remote_id)
+    label="$remote_target"
+    [[ $remote_session == default ]] || label+=" / $remote_session"
+    record=$("$jq_bin" -cn \
+      --arg id "$id" \
+      --arg target "$remote_target" \
+      --arg session "$remote_session" \
+      --arg label "$label" \
+      --argjson pid "$pid" \
+      '{id: $id, target: $target, session: $session, label: $label, pid: $pid}')
+    printf '%s%s' "$separator" "$record"
+    separator=,
+  done
+  printf ']\n'
+}
+
+snapshot() {
+  local pid="${1:-}" remote_command
+  read_remote_process "$pid" || {
+    printf 'Remote Herdr process is no longer running.\n' >&2
+    return 1
+  }
+  find_remote_control "$pid" || {
+    printf 'Remote Herdr SSH connection is unavailable.\n' >&2
+    return 1
+  }
+
+  if [[ $remote_session == default ]]; then
+    remote_command="herdr api snapshot"
+  else
+    printf -v remote_command 'herdr --session %q api snapshot' "$remote_session"
+  fi
+
+  "$timeout_bin" --kill-after=1s 6s \
+    "$ssh_bin" -F "$remote_config" -S "$remote_control" \
+    -o BatchMode=yes -o ConnectTimeout=2 -T "$remote_target" "$remote_command"
+}
+
+case "${1:-}" in
+discover)
+  discover
+  ;;
+snapshot)
+  snapshot "${2:-}"
+  ;;
+*)
+  printf 'Usage: udder-remote <discover|snapshot PID>\n' >&2
+  exit 2
+  ;;
+esac

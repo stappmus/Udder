@@ -165,6 +165,32 @@ function parseSnapshot(raw) {
   }
 }
 
+function parseRemoteDiscovery(raw) {
+  var parsed = parseJson(raw)
+  if (!parsed.ok || !Array.isArray(parsed.value))
+    return { ok: false, remotes: [], message: "Could not inspect remote Herdr connections." }
+
+  var remotes = []
+  var seen = {}
+  for (var i = 0; i < parsed.value.length && remotes.length < 20; i++) {
+    var entry = objectValue(parsed.value[i])
+    var id = textValue(entry.id, "")
+    var target = textValue(entry.target, "")
+    var session = textValue(entry.session, "default")
+    var pid = Math.floor(numberValue(entry.pid, 0))
+    if (id === "" || target === "" || session === "" || pid < 2 || seen[id]) continue
+    seen[id] = true
+    remotes.push({
+      id: id,
+      target: target,
+      session: session,
+      label: textValue(entry.label, target),
+      pid: pid
+    })
+  }
+  return { ok: true, remotes: remotes, message: "" }
+}
+
 function countAgents(agents) {
   var counts = { total: 0, working: 0, blocked: 0, done: 0, idle: 0, unknown: 0 }
   var rows = arrayValue(agents)
@@ -294,7 +320,7 @@ function parseEvent(raw, contextRaw) {
 
 function parsePending(raw) {
   var parsed = parseJson(raw)
-  if (!parsed.ok) return { ok: false, pending: {}, message: parsed.message }
+  if (!parsed.ok) return { ok: false, pending: {}, remoteTracking: {}, message: parsed.message }
   var document = objectValue(parsed.value)
   var source = objectValue(document.pending)
   var pending = {}
@@ -317,5 +343,13 @@ function parsePending(raw) {
       createdAt: numberValue(entry.createdAt, 0)
     }
   }
-  return { ok: true, pending: pending, message: "" }
+  var trackingSource = objectValue(document.remoteTracking)
+  var remoteTracking = {}
+  var trackingKeys = Object.keys(trackingSource)
+  for (var j = 0; j < trackingKeys.length && j < 50; j++) {
+    var remoteId = textValue(trackingKeys[j], "")
+    if (remoteId !== "" && trackingSource[trackingKeys[j]] === true)
+      remoteTracking[remoteId] = true
+  }
+  return { ok: true, pending: pending, remoteTracking: remoteTracking, message: "" }
 }
