@@ -24,6 +24,7 @@ make_process 110 100 herdr
 make_process 200 1 alacritty
 make_process 210 200 herdr --remote kontor
 make_process 211 210 /usr/bin/herdr client
+make_process 220 999 herdr --remote orphan
 make_process 300 1 /usr/bin/herdr server
 
 cat >"$bin_root/pgrep" <<'SCRIPT'
@@ -83,11 +84,15 @@ mapfile -t target_calls <"$capture"
 
 : >"$capture"
 UDDER_TEST_PIDS='110 211 300' run_open --remote-target kontor --remote-session default
-[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\therdr\t--remote\tkontor' ]]
+[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\t--\therdr\t--remote\tkontor' ]]
 
 : >"$capture"
 UDDER_TEST_PIDS='110 211 300' run_open --remote-target devbox --remote-session agents
-[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\therdr\t--remote\tdevbox\t--session\tagents' ]]
+[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\t--\therdr\t--remote\tdevbox\t--session\tagents' ]]
+
+: >"$capture"
+UDDER_TEST_PIDS='110 220 300' run_open --remote-target orphan --remote-session default
+[[ $(<"$capture") == $'omarchy\tlaunch\tterminal\t--\therdr\t--remote\torphan' ]]
 
 actual=$("$repo_root/udder-open" --dry-run)
 [[ $actual == focus$'\t'* ]]

@@ -157,14 +157,16 @@ if ((${#local_clients[@]} > 0)); then
     ' <<<"$clients_json" 2>/dev/null || true
   )
 
-  if $dry_run; then
-    if [[ -n $remote_pid ]]; then
-      printf 'unmapped-remote-client\t%s\n' "${local_clients[0]}"
-    else
-      printf 'unmapped-local-client\t%s\n' "${local_clients[0]}"
+  if [[ -z $remote_target ]]; then
+    if $dry_run; then
+      if [[ -n $remote_pid ]]; then
+        printf 'unmapped-remote-client\t%s\n' "${local_clients[0]}"
+      else
+        printf 'unmapped-local-client\t%s\n' "${local_clients[0]}"
+      fi
     fi
+    exit 1
   fi
-  exit 1
 fi
 
 [[ -z $remote_pid ]] || exit 1
@@ -175,9 +177,9 @@ if [[ -n $remote_target ]]; then
     exit 0
   fi
   if [[ $remote_session == default ]]; then
-    exec "$omarchy_bin" launch terminal herdr --remote "$remote_target"
+    exec "$omarchy_bin" launch terminal -- herdr --remote "$remote_target"
   fi
-  exec "$omarchy_bin" launch terminal herdr --remote "$remote_target" --session "$remote_session"
+  exec "$omarchy_bin" launch terminal -- herdr --remote "$remote_target" --session "$remote_session"
 fi
 
 if $dry_run; then
