@@ -191,6 +191,74 @@ function parseRemoteDiscovery(raw) {
   return { ok: true, remotes: remotes, message: "" }
 }
 
+function decodeBase64Ascii(value) {
+  var alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  var input = textValue(value, "").replace(/\s+/g, "")
+  if (input === "" || input.length % 4 === 1 || /[^A-Za-z0-9+/=]/.test(input)) return ""
+  while (input.length % 4 !== 0) input += "="
+  var output = ""
+  for (var i = 0; i < input.length; i += 4) {
+    var a = alphabet.indexOf(input.charAt(i))
+    var b = alphabet.indexOf(input.charAt(i + 1))
+    var c = input.charAt(i + 2) === "=" ? 64 : alphabet.indexOf(input.charAt(i + 2))
+    var d = input.charAt(i + 3) === "=" ? 64 : alphabet.indexOf(input.charAt(i + 3))
+    if (a < 0 || b < 0 || c < 0 || d < 0) return ""
+    output += String.fromCharCode((a << 2) | (b >> 4))
+    if (c !== 64) output += String.fromCharCode(((b & 15) << 4) | (c >> 2))
+    if (d !== 64) output += String.fromCharCode(((c & 3) << 6) | d)
+  }
+  return output
+}
+
+function remoteRecord(remoteId, value) {
+  var id = textValue(remoteId, "")
+  var entry = objectValue(value)
+  var target = textValue(entry.target, "")
+  var session = textValue(entry.session, "default")
+
+  if (target === "" && value === true && id !== "") {
+    try {
+      var decoded = JSON.parse(decodeBase64Ascii(id))
+      if (Array.isArray(decoded) && decoded.length === 2) {
+        target = textValue(decoded[0], "")
+        session = textValue(decoded[1], "default")
+      }
+    } catch (error) {}
+  }
+
+  if (id === "" || target === "" || target.charAt(0) === "-" || session === "") return null
+  return {
+    id: id,
+    target: target,
+    session: session,
+    label: textValue(entry.label, session === "default" ? target : target + " / " + session)
+  }
+}
+
+function mergeRemoteConnections(discovered, remoteTracking) {
+  var rows = []
+  var seen = {}
+  var live = arrayValue(discovered)
+  for (var i = 0; i < live.length; i++) {
+    var current = objectValue(live[i])
+    var currentId = textValue(current.id, "")
+    if (currentId === "" || seen[currentId]) continue
+    seen[currentId] = true
+    rows.push(current)
+  }
+
+  var tracking = objectValue(remoteTracking)
+  var ids = Object.keys(tracking)
+  for (var j = 0; j < ids.length; j++) {
+    var record = remoteRecord(ids[j], tracking[ids[j]])
+    if (!record || seen[record.id]) continue
+    record.pid = 0
+    seen[record.id] = true
+    rows.push(record)
+  }
+  return rows
+}
+
 function countAgents(agents) {
   var counts = { total: 0, working: 0, blocked: 0, done: 0, idle: 0, unknown: 0 }
   var rows = arrayValue(agents)
@@ -348,8 +416,8 @@ function parsePending(raw) {
   var trackingKeys = Object.keys(trackingSource)
   for (var j = 0; j < trackingKeys.length && j < 50; j++) {
     var remoteId = textValue(trackingKeys[j], "")
-    if (remoteId !== "" && trackingSource[trackingKeys[j]] === true)
-      remoteTracking[remoteId] = true
+    var remote = remoteRecord(remoteId, trackingSource[trackingKeys[j]])
+    if (remote) remoteTracking[remoteId] = remote
   }
   return { ok: true, pending: pending, remoteTracking: remoteTracking, message: "" }
 }

@@ -186,8 +186,12 @@ Panel {
     onViewAgentsChanged: root.ensureCursor()
     onTrackedRemoteConnectionsChanged: root.ensureSelectedSession()
     onTerminalLaunchRequested: Quickshell.execDetached([herdr.pluginRoot + "/udder-open"])
-    onRemoteTerminalLaunchRequested: function(pid) {
-      Quickshell.execDetached([herdr.pluginRoot + "/udder-open", "--remote", String(pid)])
+    onRemoteTerminalLaunchRequested: function(target, session) {
+      Quickshell.execDetached([
+        herdr.pluginRoot + "/udder-open",
+        "--remote-target", String(target),
+        "--remote-session", String(session || "default")
+      ])
     }
   }
 
@@ -344,7 +348,7 @@ Panel {
 
               Text {
                 width: parent.width
-                text: "Track its agents in Udder over the existing SSH connection?"
+                text: "Keep tracking its agents after this terminal closes?"
                 color: root.dim
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.bodySmall
@@ -404,7 +408,7 @@ Panel {
             Text {
               width: parent.width - stopTrackingButton.implicitWidth - parent.spacing
               anchors.verticalCenter: parent.verticalCenter
-              text: "Connected through Herdr’s existing SSH session"
+              text: "Tracked through Udder’s private SSH connection"
               color: root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption

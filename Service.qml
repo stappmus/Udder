@@ -160,7 +160,7 @@ Item {
   readonly property int remoteRefreshIntervalMs: intSetting("remoteRefreshIntervalSec", 10, 5, 60) * 1000
 
   signal terminalLaunchRequested()
-  signal remoteTerminalLaunchRequested(int pid)
+  signal remoteTerminalLaunchRequested(string target, string session)
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -429,9 +429,11 @@ Item {
 
   function applyRemoteDiscovery(raw, exitCode) {
     var parsed = exitCode === 0 ? Model.parseRemoteDiscovery(raw) : { ok: false, remotes: [] }
-    var nextConnections = parsed.ok ? parsed.remotes : []
+    var discoveredConnections = parsed.ok ? parsed.remotes : []
+    var nextConnections = Model.mergeRemoteConnections(discoveredConnections, remoteTracking)
     var activeIds = {}
-    for (var i = 0; i < nextConnections.length; i++) activeIds[nextConnections[i].id] = true
+    for (var i = 0; i < discoveredConnections.length; i++)
+      activeIds[discoveredConnections[i].id] = true
 
     remoteConnections = nextConnections
     remoteConnectionsRevision++
@@ -444,22 +446,29 @@ Item {
 
     var nextSnapshots = {}
     for (var snapshotId in remoteSnapshots) {
-      if (activeIds[snapshotId]) nextSnapshots[snapshotId] = remoteSnapshots[snapshotId]
+      if (activeIds[snapshotId] || remoteTracking[snapshotId])
+        nextSnapshots[snapshotId] = remoteSnapshots[snapshotId]
     }
     remoteSnapshots = nextSnapshots
     remoteSnapshotsRevision++
 
-    if (activeRemoteId !== "" && !activeIds[activeRemoteId]) activeRemoteId = ""
+    if (activeRemoteId !== "" && !remoteTracking[activeRemoteId]) activeRemoteId = ""
     refreshTrackedRemotes()
     if (remoteDiscoveryQueued) Qt.callLater(root.discoverRemotes)
   }
 
   function trackRemote(remoteId) {
     var id = String(remoteId || "")
-    if (id === "" || !remoteConnection(id)) return
+    var remote = remoteConnection(id)
+    if (id === "" || !remote) return
     var next = {}
     for (var key in remoteTracking) next[key] = remoteTracking[key]
-    next[id] = true
+    next[id] = {
+      id: id,
+      target: remote.target,
+      session: remote.session,
+      label: remote.label
+    }
     remoteTracking = next
     remoteTrackingRevision++
     dismissRemote(id)
@@ -470,12 +479,19 @@ Item {
   function untrackRemote(remoteId) {
     var id = String(remoteId || "")
     if (id === "" || !remoteTracking[id]) return
+    var remote = remoteConnection(id) || remoteTracking[id]
     var next = {}
     for (var key in remoteTracking) if (key !== id) next[key] = remoteTracking[key]
     remoteTracking = next
     remoteTrackingRevision++
     if (activeRemoteId === id) activeRemoteId = ""
+    dismissRemote(id)
+    if (remote && remote.target)
+      Quickshell.execDetached([
+        pluginRoot + "/udder-remote", "stop", String(remote.target), String(remote.session || "default")
+      ])
     schedulePendingSave()
+    discoverRemotes()
   }
 
   function dismissRemote(remoteId) {
@@ -523,7 +539,9 @@ Item {
       protocol: remoteSnapshot(id).protocol,
       lastUpdatedMs: remoteSnapshot(id).lastUpdatedMs
     })
-    remoteSnapshotProcess.command = [pluginRoot + "/udder-remote", "snapshot", String(remote.pid)]
+    remoteSnapshotProcess.command = [
+      pluginRoot + "/udder-remote", "snapshot", String(remote.target), String(remote.session || "default")
+    ]
     remoteSnapshotProcess.running = true
   }
 
@@ -566,7 +584,7 @@ Item {
 
   function openRemote(remoteId) {
     var remote = remoteConnection(remoteId)
-    if (remote) remoteTerminalLaunchRequested(remote.pid)
+    if (remote) remoteTerminalLaunchRequested(remote.target, remote.session || "default")
   }
 
   function applyClientAttached(attached) {
@@ -625,8 +643,12 @@ Item {
     pendingRevision++
     remoteTracking = parsed.remoteTracking || ({})
     remoteTrackingRevision++
+    remoteConnections = Model.mergeRemoteConnections(remoteConnections, remoteTracking)
+    remoteConnectionsRevision++
     pendingStateLoaded = true
     if (clientAttached) clearPending()
+    schedulePendingSave()
+    discoverRemotes()
     refreshTrackedRemotes()
   }
 
@@ -647,7 +669,7 @@ Item {
   function flushPending() {
     if (!pendingStateLoaded) return
     pendingFile.setText(JSON.stringify({
-      schemaVersion: 2,
+      schemaVersion: 3,
       pending: pendingByPane,
       remoteTracking: remoteTracking
     }, null, 2) + "\n")

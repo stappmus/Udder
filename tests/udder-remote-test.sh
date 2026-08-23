@@ -10,6 +10,7 @@ proc_root="$test_root/proc"
 tmp_root="$test_root/tmp"
 bin_root="$test_root/bin"
 capture="$test_root/capture"
+runtime_root="$test_root/runtime"
 mkdir -p -- "$proc_root" "$tmp_root" "$bin_root"
 
 make_process() {
@@ -47,6 +48,7 @@ remote_env=(
   UDDER_TEST_ALLOW_CONTROL_FILE=1
   UDDER_SSH_BIN="$bin_root/ssh"
   UDDER_TEST_CAPTURE="$capture"
+  UDDER_RUNTIME_ROOT="$runtime_root"
 )
 
 discovered=$(env "${remote_env[@]}" "$repo_root/udder-remote" discover)
@@ -71,5 +73,28 @@ if env "${remote_env[@]}" "$repo_root/udder-remote" snapshot 999 >/dev/null 2>&1
   printf 'missing remote process unexpectedly succeeded\n' >&2
   exit 1
 fi
+
+rm -rf -- "$proc_root/210" "$proc_root/220" "$tmp_root/herdr-ssh-210-0" "$tmp_root/herdr-ssh-220-0"
+[[ $(env "${remote_env[@]}" "$repo_root/udder-remote" discover | jq length) -eq 0 ]]
+
+snapshot=$(env "${remote_env[@]}" "$repo_root/udder-remote" snapshot kontor default)
+[[ $(jq -r '.result.snapshot.protocol' <<<"$snapshot") == 20 ]]
+mapfile -t persisted_args <"$capture"
+printf '%s\n' "${persisted_args[@]}" | grep -Fx -- 'ControlMaster=auto' >/dev/null
+printf '%s\n' "${persisted_args[@]}" | grep -Fx -- 'ControlPersist=90' >/dev/null
+[[ ${persisted_args[-2]} == kontor ]]
+[[ ${persisted_args[-1]} == 'herdr api snapshot' ]]
+
+env "${remote_env[@]}" "$repo_root/udder-remote" snapshot devbox agents >/dev/null
+mapfile -t persisted_named_args <"$capture"
+[[ ${persisted_named_args[-2]} == devbox ]]
+[[ ${persisted_named_args[-1]} == 'herdr --session agents api snapshot' ]]
+
+env "${remote_env[@]}" "$repo_root/udder-remote" snapshot ssh://you@server:2222 default >/dev/null
+mapfile -t uri_args <"$capture"
+printf '%s\n' "${uri_args[@]}" | grep -Fx -- '-p' >/dev/null
+printf '%s\n' "${uri_args[@]}" | grep -Fx -- '2222' >/dev/null
+[[ ${uri_args[-2]} == you@server ]]
+[[ ${uri_args[-1]} == 'herdr api snapshot' ]]
 
 printf 'udder-remote tests passed\n'

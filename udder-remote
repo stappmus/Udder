@@ -7,11 +7,15 @@ tmp_root="${UDDER_TMP_ROOT:-${TMPDIR:-/tmp}}"
 ssh_bin="${UDDER_SSH_BIN:-ssh}"
 timeout_bin="${UDDER_TIMEOUT_BIN:-timeout}"
 jq_bin="${UDDER_JQ_BIN:-jq}"
+sha256sum_bin="${UDDER_SHA256SUM_BIN:-sha256sum}"
+runtime_root="${UDDER_RUNTIME_ROOT:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/udder}"
 
 remote_target=""
 remote_session="default"
 remote_config=""
 remote_control=""
+ssh_destination=""
+ssh_port=""
 
 control_is_usable() {
   local path="$1"
@@ -66,6 +70,57 @@ remote_id() {
     '[$target, $session] | @json | @base64'
 }
 
+validate_remote() {
+  [[ -n $remote_target && $remote_target != -* && -n $remote_session ]]
+}
+
+prepare_ssh_target() {
+  local authority user_part="" host_part
+  ssh_destination="$remote_target"
+  ssh_port=""
+  [[ $remote_target == ssh://* ]] || return 0
+
+  authority="${remote_target#ssh://}"
+  [[ -n $authority && $authority != */* && $authority != *\?* && $authority != *\#* ]] || return 1
+  if [[ $authority == *@* ]]; then
+    user_part="${authority%@*}"
+    authority="${authority##*@}"
+    [[ -n $user_part ]] || return 1
+  fi
+
+  if [[ $authority =~ ^\[([^]]+)\](:([0-9]+))?$ ]]; then
+    host_part="[${BASH_REMATCH[1]}]"
+    ssh_port="${BASH_REMATCH[3]:-}"
+  elif [[ $authority =~ ^(.+):([0-9]+)$ ]]; then
+    host_part="${BASH_REMATCH[1]}"
+    ssh_port="${BASH_REMATCH[2]}"
+  else
+    host_part="$authority"
+  fi
+  [[ -n $host_part && ( -z $ssh_port || ( $ssh_port -ge 1 && $ssh_port -le 65535 ) ) ]] || return 1
+  ssh_destination="${user_part:+$user_part@}$host_part"
+}
+
+remote_command() {
+  if [[ $remote_session == default ]]; then
+    printf '%s\n' 'herdr api snapshot'
+  else
+    printf 'herdr --session %q api snapshot\n' "$remote_session"
+  fi
+}
+
+owned_control_path() {
+  local digest
+  digest=$(printf '%s\0%s' "$remote_target" "$remote_session" | "$sha256sum_bin")
+  digest="${digest%% *}"
+  printf '%s/ssh-%s\n' "$runtime_root" "${digest:0:32}"
+}
+
+ensure_runtime_root() {
+  mkdir -p -- "$runtime_root"
+  chmod 700 -- "$runtime_root"
+}
+
 discover() {
   local proc_dir pid id label record separator=""
   printf '['
@@ -90,7 +145,7 @@ discover() {
   printf ']\n'
 }
 
-snapshot() {
+snapshot_from_process() {
   local pid="${1:-}" remote_command
   read_remote_process "$pid" || {
     printf 'Remote Herdr process is no longer running.\n' >&2
@@ -112,15 +167,63 @@ snapshot() {
     -o BatchMode=yes -o ConnectTimeout=2 -T "$remote_target" "$remote_command"
 }
 
+snapshot_remote() {
+  local control remote_command_value
+  remote_target="${1:-}"
+  remote_session="${2:-default}"
+  validate_remote || {
+    printf 'Invalid remote Herdr target or session.\n' >&2
+    return 2
+  }
+  prepare_ssh_target || {
+    printf 'Invalid remote Herdr SSH URL.\n' >&2
+    return 2
+  }
+
+  ensure_runtime_root
+  control=$(owned_control_path)
+  remote_command_value=$(remote_command)
+  local -a port_args=()
+  [[ -z $ssh_port ]] || port_args=(-p "$ssh_port")
+  "$timeout_bin" --kill-after=1s 8s \
+    "$ssh_bin" "${port_args[@]}" \
+    -o BatchMode=yes -o ConnectTimeout=3 -o ConnectionAttempts=1 \
+    -o ControlMaster=auto -o ControlPersist=90 \
+    -o ControlPath="$control" -T "$ssh_destination" "$remote_command_value"
+}
+
+stop_remote() {
+  local control
+  local -a port_args=()
+  remote_target="${1:-}"
+  remote_session="${2:-default}"
+  validate_remote || return 2
+  prepare_ssh_target || return 2
+  [[ -z $ssh_port ]] || port_args=(-p "$ssh_port")
+  control=$(owned_control_path)
+  [[ -e $control || -S $control ]] || return 0
+  "$timeout_bin" --kill-after=1s 4s \
+    "$ssh_bin" "${port_args[@]}" -o BatchMode=yes -o ControlPath="$control" \
+    -O exit "$ssh_destination" >/dev/null 2>&1 || true
+  [[ ! -e $control && ! -S $control ]] || rm -f -- "$control"
+}
+
 case "${1:-}" in
 discover)
   discover
   ;;
 snapshot)
-  snapshot "${2:-}"
+  if [[ ${2:-} =~ ^[0-9]+$ && $# -eq 2 ]]; then
+    snapshot_from_process "$2"
+  else
+    snapshot_remote "${2:-}" "${3:-default}"
+  fi
+  ;;
+stop)
+  stop_remote "${2:-}" "${3:-default}"
   ;;
 *)
-  printf 'Usage: udder-remote <discover|snapshot PID>\n' >&2
+  printf 'Usage: udder-remote <discover|snapshot TARGET [SESSION]|stop TARGET [SESSION]>\n' >&2
   exit 2
   ;;
 esac

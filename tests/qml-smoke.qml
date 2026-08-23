@@ -8,6 +8,7 @@ ShellRoot {
   readonly property string focusProbePaneId: Quickshell.env("UDDER_SMOKE_PANE_ID") || ""
   property bool focusProbePassed: focusProbePaneId === ""
   property bool rowProbePassed: false
+  property bool remotePersistenceProbePassed: false
 
   QtObject {
     id: fakeBar
@@ -49,6 +50,11 @@ ShellRoot {
     onTerminalLaunchRequested: shell.focusProbePassed = true
   }
 
+  Udder.Service {
+    id: remotePersistenceProbe
+    settings: ({ autoRegisterEvents: false, remoteRefreshIntervalSec: 60 })
+  }
+
   Udder.AgentRow {
     id: rowProbe
     visible: false
@@ -64,16 +70,31 @@ ShellRoot {
   }
 
   Timer {
-    interval: 1200
+    interval: 1400
     running: true
     onTriggered: {
-      if (!shell.focusProbePassed || !shell.rowProbePassed) {
-        console.error("udder qml focus smoke failed", shell.focusProbePassed, shell.rowProbePassed)
+      var remoteId = "WyJ0ZXN0Ym94IiwiZGVmYXVsdCJd"
+      var snapshot = remotePersistenceProbe.remoteSnapshot(remoteId)
+      shell.remotePersistenceProbePassed = remotePersistenceProbe.trackedRemoteConnections.length === 1
+        && remotePersistenceProbe.trackedRemoteConnections[0].target === "testbox"
+        && snapshot.state === "ready"
+    }
+  }
+
+  Timer {
+    interval: 1800
+    running: true
+    onTriggered: {
+      if (!shell.focusProbePassed || !shell.rowProbePassed || !shell.remotePersistenceProbePassed) {
+        console.error("udder qml smoke failed", shell.focusProbePassed, shell.rowProbePassed,
+          shell.remotePersistenceProbePassed)
         widget.close()
         Qt.quit()
         return
       }
-      console.log("udder qml smoke passed", widget.width, widget.height, widget.opened, "focus", shell.focusProbePassed, "row", shell.rowProbePassed)
+      console.log("udder qml smoke passed", widget.width, widget.height, widget.opened,
+        "focus", shell.focusProbePassed, "row", shell.rowProbePassed,
+        "remote persistence", shell.remotePersistenceProbePassed)
       widget.close()
       Qt.quit()
     }

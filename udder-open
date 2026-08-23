@@ -9,6 +9,8 @@ pgrep_bin="${UDDER_PGREP_BIN:-pgrep}"
 omarchy_bin="${UDDER_OMARCHY_BIN:-omarchy}"
 dry_run=false
 remote_pid=""
+remote_target=""
+remote_session="default"
 
 while (($# > 0)); do
   case "$1" in
@@ -19,13 +21,27 @@ while (($# > 0)); do
     remote_pid="${2:-}"
     shift
     ;;
+  --remote-target)
+    remote_target="${2:-}"
+    shift
+    ;;
+  --remote-session)
+    remote_session="${2:-}"
+    shift
+    ;;
   *)
-    printf 'Usage: udder-open [--dry-run] [--remote PID]\n' >&2
+    printf 'Usage: udder-open [--dry-run] [--remote PID | --remote-target TARGET [--remote-session SESSION]]\n' >&2
     exit 2
     ;;
   esac
   shift
 done
+
+if [[ -n $remote_pid && -n $remote_target ]] \
+  || [[ -n $remote_target && $remote_target == -* ]] \
+  || [[ -n $remote_target && -z $remote_session ]]; then
+  exit 2
+fi
 
 read_ppid() {
   local pid="$1" key value rest
@@ -48,17 +64,30 @@ is_default_local_client() {
   [[ ${argv[0]##*/} == herdr ]]
 }
 
-is_remote_client() {
-  local pid="$1" arg
+read_remote_client() {
+  local pid="$1" arg index
   local -a argv=()
   [[ $pid =~ ^[0-9]+$ && -r $proc_root/$pid/cmdline && -O $proc_root/$pid/cmdline ]] || return 1
   mapfile -d '' -t argv <"$proc_root/$pid/cmdline"
   ((${#argv[@]} >= 3)) || return 1
   [[ ${argv[0]##*/} == herdr ]] || return 1
-  for arg in "${argv[@]:1}"; do
-    [[ $arg == --remote || $arg == --remote=* ]] && return 0
+  process_remote_target=""
+  process_remote_session="default"
+  for ((index = 1; index < ${#argv[@]}; index++)); do
+    arg="${argv[index]}"
+    if [[ $arg == --remote && $((index + 1)) -lt ${#argv[@]} ]]; then
+      process_remote_target="${argv[index + 1]}"
+      ((index += 1))
+    elif [[ $arg == --remote=* ]]; then
+      process_remote_target="${arg#--remote=}"
+    elif [[ $arg == --session && $((index + 1)) -lt ${#argv[@]} ]]; then
+      process_remote_session="${argv[index + 1]}"
+      ((index += 1))
+    elif [[ $arg == --session=* ]]; then
+      process_remote_session="${arg#--session=}"
+    fi
   done
-  return 1
+  [[ -n $process_remote_target && -n $process_remote_session ]]
 }
 
 window_owns_process() {
@@ -75,8 +104,17 @@ window_owns_process() {
 
 declare -a local_clients=()
 if [[ -n $remote_pid ]]; then
-  is_remote_client "$remote_pid" || exit 1
+  read_remote_client "$remote_pid" || exit 1
   local_clients+=("$remote_pid")
+elif [[ -n $remote_target ]]; then
+  while read -r pid; do
+    [[ $pid =~ ^[0-9]+$ ]] || continue
+    if read_remote_client "$pid" \
+      && [[ $process_remote_target == "$remote_target" \
+        && $process_remote_session == "$remote_session" ]]; then
+      local_clients+=("$pid")
+    fi
+  done < <("$pgrep_bin" -x herdr 2>/dev/null || true)
 else
   while read -r pid; do
     [[ $pid =~ ^[0-9]+$ ]] || continue
@@ -130,6 +168,17 @@ if ((${#local_clients[@]} > 0)); then
 fi
 
 [[ -z $remote_pid ]] || exit 1
+
+if [[ -n $remote_target ]]; then
+  if $dry_run; then
+    printf 'launch-remote\t%s\t%s\n' "$remote_target" "$remote_session"
+    exit 0
+  fi
+  if [[ $remote_session == default ]]; then
+    exec "$omarchy_bin" launch terminal herdr --remote "$remote_target"
+  fi
+  exec "$omarchy_bin" launch terminal herdr --remote "$remote_target" --session "$remote_session"
+fi
 
 if $dry_run; then
   printf 'launch\n'
