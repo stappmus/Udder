@@ -32,6 +32,88 @@ Item {
 
   property bool clientAttached: false
 
+  property var remoteConnections: []
+  property int remoteConnectionsRevision: 0
+  property var remoteTracking: ({})
+  property int remoteTrackingRevision: 0
+  property var remoteDismissed: ({})
+  property int remoteDismissedRevision: 0
+  property var remoteSnapshots: ({})
+  property int remoteSnapshotsRevision: 0
+  property string remoteSocketSignature: ""
+  property bool remoteDiscoveryQueued: false
+  property string activeRemoteId: ""
+  property var remoteRefreshQueue: []
+  property string remoteRequestId: ""
+
+  readonly property var trackedRemoteConnections: {
+    var connectionsRevision = remoteConnectionsRevision
+    var trackingRevision = remoteTrackingRevision
+    var rows = []
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (remote && remoteTracking[remote.id]) rows.push(remote)
+    }
+    return rows
+  }
+  readonly property var remotePrompt: {
+    var connectionsRevision = remoteConnectionsRevision
+    var trackingRevision = remoteTrackingRevision
+    var dismissedRevision = remoteDismissedRevision
+    if (!pendingStateLoaded) return null
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (remote && !remoteTracking[remote.id] && !remoteDismissed[remote.id]) return remote
+    }
+    return null
+  }
+  readonly property bool viewingRemote: activeRemoteId !== ""
+  readonly property var activeRemoteConnection: remoteConnection(activeRemoteId)
+  readonly property var activeRemoteSnapshot: remoteSnapshot(activeRemoteId)
+  readonly property var viewAgents: viewingRemote ? activeRemoteSnapshot.agents : agents
+  readonly property var viewCounts: Model.countAgents(viewAgents)
+  readonly property string viewState: viewingRemote ? activeRemoteSnapshot.state : state
+  readonly property string viewMessage: viewingRemote ? activeRemoteSnapshot.message : message
+  readonly property bool viewLoading: viewingRemote ? activeRemoteSnapshot.loading : loading
+  readonly property string viewLabel: viewingRemote && activeRemoteConnection
+    ? activeRemoteConnection.label : "Local"
+  readonly property int trackedBlockedCount: {
+    var connectionsRevision = remoteConnectionsRevision
+    var snapshotsRevision = remoteSnapshotsRevision
+    var trackingRevision = remoteTrackingRevision
+    var count = 0
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (!remote || !remoteTracking[remote.id]) continue
+      count += Model.countAgents(remoteSnapshot(remote.id).agents).blocked
+    }
+    return count
+  }
+  readonly property int trackedAgentCount: {
+    var connectionsRevision = remoteConnectionsRevision
+    var snapshotsRevision = remoteSnapshotsRevision
+    var trackingRevision = remoteTrackingRevision
+    var count = 0
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (!remote || !remoteTracking[remote.id]) continue
+      count += remoteSnapshot(remote.id).agents.length
+    }
+    return count
+  }
+  readonly property int trackedWorkingCount: {
+    var connectionsRevision = remoteConnectionsRevision
+    var snapshotsRevision = remoteSnapshotsRevision
+    var trackingRevision = remoteTrackingRevision
+    var count = 0
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (!remote || !remoteTracking[remote.id]) continue
+      count += Model.countAgents(remoteSnapshot(remote.id).agents).working
+    }
+    return count
+  }
+
   property var pendingByPane: ({})
   property int pendingRevision: 0
   property bool pendingStateLoaded: false
@@ -75,8 +157,10 @@ Item {
 
   readonly property int panelRefreshIntervalMs: intSetting("panelRefreshIntervalSec", 2, 1, 30) * 1000
   readonly property int clientCheckIntervalMs: intSetting("clientCheckIntervalSec", 5, 2, 60) * 1000
+  readonly property int remoteRefreshIntervalMs: intSetting("remoteRefreshIntervalSec", 10, 5, 60) * 1000
 
   signal terminalLaunchRequested()
+  signal remoteTerminalLaunchRequested(int pid)
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -106,6 +190,59 @@ Item {
     var manifestPath = urlToPath(Qt.resolvedUrl("manifest.json"))
     var slash = manifestPath.lastIndexOf("/")
     return slash >= 0 ? manifestPath.slice(0, slash) : "."
+  }
+
+  function remoteConnection(remoteId) {
+    var revision = remoteConnectionsRevision
+    var wanted = String(remoteId || "")
+    for (var i = 0; i < remoteConnections.length; i++) {
+      var remote = remoteConnections[i]
+      if (remote && remote.id === wanted) return remote
+    }
+    return null
+  }
+
+  function remoteSnapshot(remoteId) {
+    var revision = remoteSnapshotsRevision
+    var snapshot = remoteSnapshots[String(remoteId || "")]
+    if (snapshot && typeof snapshot === "object") return snapshot
+    return {
+      state: "loading",
+      message: "Waiting for the remote Herdr session…",
+      loading: false,
+      agents: [],
+      version: "",
+      protocol: 0,
+      lastUpdatedMs: 0
+    }
+  }
+
+  function firstTrackedRemoteWithStatus(status) {
+    var wanted = String(status || "")
+    var rows = trackedRemoteConnections
+    for (var i = 0; i < rows.length; i++) {
+      var agents = remoteSnapshot(rows[i].id).agents
+      for (var j = 0; j < agents.length; j++)
+        if (agents[j] && agents[j].status === wanted) return rows[i].id
+    }
+    return ""
+  }
+
+  function setActiveRemote(remoteId) {
+    var wanted = String(remoteId || "")
+    if (wanted !== "" && (!remoteTracking[wanted] || !remoteConnection(wanted))) wanted = ""
+    activeRemoteId = wanted
+    if (wanted !== "") queueRemoteRefresh(wanted)
+  }
+
+  function refreshView() {
+    if (activeRemoteId !== "") queueRemoteRefresh(activeRemoteId)
+    else refresh()
+  }
+
+  function refreshAll() {
+    refresh()
+    refreshTrackedRemotes()
   }
 
   function refresh() {
@@ -255,6 +392,7 @@ Item {
   function parseClientSockets(raw) {
     var attached = false
     var serverPresent = false
+    var remotePaths = {}
     var lines = String(raw || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
       var fields = lines[i].trim().split(/\s+/)
@@ -262,6 +400,13 @@ Item {
       var path = fields.slice(7).join(" ")
       if (path === apiSocketPath) serverPresent = true
       if (fields[5] === "03" && path === clientSocketPath) attached = true
+      if (fields[5] === "03" && path.indexOf("/herdr-remote-") >= 0)
+        remotePaths[path] = true
+    }
+    var nextRemoteSignature = Object.keys(remotePaths).sort().join("\n")
+    if (nextRemoteSignature !== remoteSocketSignature) {
+      remoteSocketSignature = nextRemoteSignature
+      discoverRemotes()
     }
     applyClientAttached(attached)
     if (!serverPresent && state === "ready" && !requestPending) {
@@ -271,6 +416,157 @@ Item {
     } else if (serverPresent && state !== "ready" && !requestPending) {
       Qt.callLater(root.refresh)
     }
+  }
+
+  function discoverRemotes() {
+    if (remoteDiscoveryProcess.running) {
+      remoteDiscoveryQueued = true
+      return
+    }
+    remoteDiscoveryQueued = false
+    remoteDiscoveryProcess.running = true
+  }
+
+  function applyRemoteDiscovery(raw, exitCode) {
+    var parsed = exitCode === 0 ? Model.parseRemoteDiscovery(raw) : { ok: false, remotes: [] }
+    var nextConnections = parsed.ok ? parsed.remotes : []
+    var activeIds = {}
+    for (var i = 0; i < nextConnections.length; i++) activeIds[nextConnections[i].id] = true
+
+    remoteConnections = nextConnections
+    remoteConnectionsRevision++
+
+    var nextDismissed = {}
+    for (var dismissedId in remoteDismissed)
+      if (activeIds[dismissedId]) nextDismissed[dismissedId] = true
+    remoteDismissed = nextDismissed
+    remoteDismissedRevision++
+
+    var nextSnapshots = {}
+    for (var snapshotId in remoteSnapshots) {
+      if (activeIds[snapshotId]) nextSnapshots[snapshotId] = remoteSnapshots[snapshotId]
+    }
+    remoteSnapshots = nextSnapshots
+    remoteSnapshotsRevision++
+
+    if (activeRemoteId !== "" && !activeIds[activeRemoteId]) activeRemoteId = ""
+    refreshTrackedRemotes()
+    if (remoteDiscoveryQueued) Qt.callLater(root.discoverRemotes)
+  }
+
+  function trackRemote(remoteId) {
+    var id = String(remoteId || "")
+    if (id === "" || !remoteConnection(id)) return
+    var next = {}
+    for (var key in remoteTracking) next[key] = remoteTracking[key]
+    next[id] = true
+    remoteTracking = next
+    remoteTrackingRevision++
+    dismissRemote(id)
+    schedulePendingSave()
+    queueRemoteRefresh(id)
+  }
+
+  function untrackRemote(remoteId) {
+    var id = String(remoteId || "")
+    if (id === "" || !remoteTracking[id]) return
+    var next = {}
+    for (var key in remoteTracking) if (key !== id) next[key] = remoteTracking[key]
+    remoteTracking = next
+    remoteTrackingRevision++
+    if (activeRemoteId === id) activeRemoteId = ""
+    schedulePendingSave()
+  }
+
+  function dismissRemote(remoteId) {
+    var id = String(remoteId || "")
+    if (id === "") return
+    var next = {}
+    for (var key in remoteDismissed) next[key] = remoteDismissed[key]
+    next[id] = true
+    remoteDismissed = next
+    remoteDismissedRevision++
+  }
+
+  function refreshTrackedRemotes() {
+    var rows = trackedRemoteConnections
+    for (var i = 0; i < rows.length; i++) queueRemoteRefresh(rows[i].id)
+  }
+
+  function queueRemoteRefresh(remoteId) {
+    var id = String(remoteId || "")
+    if (id === "" || !remoteTracking[id] || !remoteConnection(id)) return
+    if (remoteRequestId === id || remoteRefreshQueue.indexOf(id) >= 0) return
+    var next = remoteRefreshQueue.slice()
+    next.push(id)
+    remoteRefreshQueue = next
+    pumpRemoteRefresh()
+  }
+
+  function pumpRemoteRefresh() {
+    if (remoteRequestId !== "" || remoteSnapshotProcess.running || remoteRefreshQueue.length === 0) return
+    var id = remoteRefreshQueue[0]
+    remoteRefreshQueue = remoteRefreshQueue.slice(1)
+    var remote = remoteConnection(id)
+    if (!remote || !remoteTracking[id]) {
+      Qt.callLater(root.pumpRemoteRefresh)
+      return
+    }
+
+    remoteRequestId = id
+    setRemoteSnapshot(id, {
+      state: remoteSnapshot(id).state,
+      message: remoteSnapshot(id).message,
+      loading: true,
+      agents: remoteSnapshot(id).agents,
+      version: remoteSnapshot(id).version,
+      protocol: remoteSnapshot(id).protocol,
+      lastUpdatedMs: remoteSnapshot(id).lastUpdatedMs
+    })
+    remoteSnapshotProcess.command = [pluginRoot + "/udder-remote", "snapshot", String(remote.pid)]
+    remoteSnapshotProcess.running = true
+  }
+
+  function setRemoteSnapshot(remoteId, snapshot) {
+    var next = {}
+    for (var key in remoteSnapshots) next[key] = remoteSnapshots[key]
+    next[String(remoteId || "")] = snapshot
+    remoteSnapshots = next
+    remoteSnapshotsRevision++
+  }
+
+  function applyRemoteSnapshot(raw, exitCode) {
+    var id = remoteRequestId
+    remoteRequestId = ""
+    if (id === "") return
+    var parsed = exitCode === 0 ? Model.parseSnapshot(raw) : { ok: false }
+    if (parsed.ok) {
+      setRemoteSnapshot(id, {
+        state: "ready",
+        message: parsed.agents.length === 0 ? "No agents are running." : "",
+        loading: false,
+        agents: parsed.agents,
+        version: parsed.version,
+        protocol: parsed.protocol,
+        lastUpdatedMs: Date.now()
+      })
+    } else {
+      setRemoteSnapshot(id, {
+        state: "offline",
+        message: "Could not read the remote Herdr session.",
+        loading: false,
+        agents: [],
+        version: "",
+        protocol: 0,
+        lastUpdatedMs: 0
+      })
+    }
+    Qt.callLater(root.pumpRemoteRefresh)
+  }
+
+  function openRemote(remoteId) {
+    var remote = remoteConnection(remoteId)
+    if (remote) remoteTerminalLaunchRequested(remote.pid)
   }
 
   function applyClientAttached(attached) {
@@ -327,8 +623,11 @@ Item {
       console.warn("udder: ignoring unreadable pending state", parsed.message)
     pendingByPane = parsed.pending
     pendingRevision++
+    remoteTracking = parsed.remoteTracking || ({})
+    remoteTrackingRevision++
     pendingStateLoaded = true
     if (clientAttached) clearPending()
+    refreshTrackedRemotes()
   }
 
   function replaceBlocked(next) {
@@ -347,7 +646,11 @@ Item {
 
   function flushPending() {
     if (!pendingStateLoaded) return
-    pendingFile.setText(JSON.stringify({ schemaVersion: 1, pending: pendingByPane }, null, 2) + "\n")
+    pendingFile.setText(JSON.stringify({
+      schemaVersion: 2,
+      pending: pendingByPane,
+      remoteTracking: remoteTracking
+    }, null, 2) + "\n")
   }
 
   function reconcilePending() {
@@ -451,6 +754,7 @@ Item {
   Component.onCompleted: {
     ensureStateDir.running = true
     ensureIntegration()
+    discoverRemotes()
     Qt.callLater(root.refresh)
   }
 
@@ -512,7 +816,14 @@ Item {
     interval: root.panelRefreshIntervalMs
     repeat: true
     running: root.panelVisible
-    onTriggered: root.refresh()
+    onTriggered: root.refreshView()
+  }
+
+  Timer {
+    interval: root.remoteRefreshIntervalMs
+    repeat: true
+    running: root.trackedRemoteConnections.length > 0
+    onTriggered: root.refreshTrackedRemotes()
   }
 
   FileView {
@@ -571,6 +882,33 @@ Item {
 
     stdout: StdioCollector {
       id: integrationOutput
+      waitForEnd: true
+    }
+  }
+
+  Process {
+    id: remoteDiscoveryProcess
+    running: false
+    command: [root.pluginRoot + "/udder-remote", "discover"]
+    onExited: function(exitCode) {
+      root.applyRemoteDiscovery(remoteDiscoveryOutput.text, exitCode)
+    }
+
+    stdout: StdioCollector {
+      id: remoteDiscoveryOutput
+      waitForEnd: true
+    }
+  }
+
+  Process {
+    id: remoteSnapshotProcess
+    running: false
+    onExited: function(exitCode) {
+      root.applyRemoteSnapshot(remoteSnapshotOutput.text, exitCode)
+    }
+
+    stdout: StdioCollector {
+      id: remoteSnapshotOutput
       waitForEnd: true
     }
   }

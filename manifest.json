@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "stappmus.udder",
   "name": "Udder",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": "stappmus",
   "license": "MIT",
   "description": "See all your Herdr agents from the Omarchy bar, get notified when one finishes while you are away, and jump straight back to it.",
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Udder",
-    "description": "See all your local Herdr agents, get notified when one finishes while Herdr is out of sight, and jump straight back to it.",
+    "description": "See local and approved remote Herdr agents, get notified when local work finishes, and jump straight back to it.",
     "category": "Development",
     "aliases": ["udder", "herdr", "herdr-agents"],
     "allowMultiple": false,
@@ -22,7 +22,8 @@
       "autoRegisterEvents": true,
       "playCompletionSound": true,
       "panelRefreshIntervalSec": 2,
-      "clientCheckIntervalSec": 5
+      "clientCheckIntervalSec": 5,
+      "remoteRefreshIntervalSec": 10
     },
     "schema": [
       {
@@ -58,6 +59,16 @@
         "step": 1,
         "defaultValue": 5,
         "description": "How often Udder cheaply reads Linux socket metadata to notice that a Herdr client attached."
+      },
+      {
+        "key": "remoteRefreshIntervalSec",
+        "type": "integer",
+        "label": "Tracked remote refresh (seconds)",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "defaultValue": 10,
+        "description": "How often approved remote Herdr sessions are refreshed over their existing SSH connections."
       }
     ]
   }
