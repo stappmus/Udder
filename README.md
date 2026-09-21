@@ -2,7 +2,7 @@
 
 Udder adds a small cow to the Omarchy bar that shows every coding agent in your
 local [Herdr](https://herdr.dev) session and any remote sessions you approve.
-Open it to see who is working, idle, blocked, or finished. Click any local agent
+Open it to see who is working, idle, waiting on a question, or finished. Click any local agent
 to return to that exact conversation, or a remote agent to return to its remote
 Herdr dashboard.
 
@@ -18,11 +18,11 @@ feel safe.
 
 ![Udder's Quickshell agent overview](preview.png)
 
-![Notification in the Omarchy bar when an agent is blocked](preview-blocked-alert.gif)
+![Notification in the Omarchy bar when an agent has a question](preview-blocked-alert.gif)
 
 ## Everyday use
 
-- Click the cow to see who is working, idle, blocked, or finished.
+- Click the cow to see who is working, idle, waiting on a question, or finished.
 - Click an agent to jump to that exact agent in your local Herdr terminal.
 - If local Herdr is already open elsewhere, Udder takes you to its desktop
   instead of opening another terminal.
@@ -67,7 +67,7 @@ herdr --remote my-server
 
 Then open Udder from the cow in your bar and press **Track** when it asks about
 the new remote. That's it—the remote gets its own tab beside **Local**, with the
-same working, blocked, idle, and done overview. You can close the terminal you
+same working, question, idle, and done overview. You can close the terminal you
 used to connect; Udder keeps tracking the remote in the background and opens a
 new remote Herdr terminal when you select one of its agents. This also works
 when the remote command is wrapped in a friendly alias or shell function such

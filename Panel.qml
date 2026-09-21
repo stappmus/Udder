@@ -60,7 +60,7 @@ Panel {
       if (herdr.viewCounts.total === 0) return "No agents are running on " + herdr.viewLabel
       var remoteParts = [herdr.viewCounts.total + " agent" + (herdr.viewCounts.total === 1 ? "" : "s")]
       if (herdr.viewCounts.working > 0) remoteParts.push(herdr.viewCounts.working + " working")
-      if (herdr.viewCounts.blocked > 0) remoteParts.push(herdr.viewCounts.blocked + " blocked")
+      if (herdr.viewCounts.blocked > 0) remoteParts.push(herdr.viewCounts.blocked + (herdr.viewCounts.blocked === 1 ? " question" : " questions"))
       if (herdr.viewCounts.done > 0) remoteParts.push(herdr.viewCounts.done + " done")
       return remoteParts.join(" · ")
     }
@@ -71,15 +71,17 @@ Panel {
     if (herdr.counts.total === 0) return "No agents are running"
     var parts = [herdr.counts.total + " agent" + (herdr.counts.total === 1 ? "" : "s")]
     if (herdr.counts.working > 0) parts.push(herdr.counts.working + " working")
-    if (herdr.counts.blocked > 0) parts.push(herdr.counts.blocked + " blocked")
+    if (herdr.counts.blocked > 0) parts.push(herdr.counts.blocked + (herdr.counts.blocked === 1 ? " question" : " questions"))
     if (herdr.counts.done > 0) parts.push(herdr.counts.done + " done")
     return parts.join(" · ")
   }
 
   function tooltipText() {
-    if (root.cowBlocked)
-      return Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0)
-        + herdr.trackedBlockedCount + " blocked · click to review"
+    if (root.cowBlocked) {
+      var questionCount = Math.max(herdr.blockedCount, Number(herdr.counts.blocked) || 0)
+        + herdr.trackedBlockedCount
+      return questionCount + (questionCount === 1 ? " question" : " questions") + " · click to review"
+    }
     if (herdr.pendingCount > 0)
       return herdr.pendingCount + " finished · click to open Herdr"
     if (root.cowRemotePrompt)

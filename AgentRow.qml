@@ -127,7 +127,7 @@ BorderSurface {
       Text {
         id: statusText
         anchors.centerIn: parent
-        text: root.pending ? "FINISHED" : String(root.agent.status || "unknown").toUpperCase()
+        text: root.pending ? "FINISHED" : (root.agent.status === "blocked" ? "QUESTION" : String(root.agent.status || "unknown").toUpperCase())
         color: root.stateColor
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
